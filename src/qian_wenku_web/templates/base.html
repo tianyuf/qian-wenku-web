@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="钱学森文库 — 钱学森年谱、文集与书信的数字化检索与研究平台">
+    {% block meta %}{% endblock %}
     <title>{% block title %}钱学森文库{% endblock %}</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
@@ -20,6 +21,7 @@
             <a href="{{ url_for('views.index') }}" class="logo">
                 钱学森文库
             </a>
+            {% block header_nav %}
             <nav class="nav" aria-label="主导航">
                 <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('views.index') }}">搜索</a>
                 <a class="nav-link {% if request.path == '/browse' or (request.path.startswith('/browse/') and not request.path.startswith('/browse/recipient') and not request.path.startswith('/browse/entit')) %}active{% endif %}" href="{{ url_for('views.browse') }}">目录</a>
@@ -33,6 +35,7 @@
                 </form>
                 {% endif %}
             </nav>
+            {% endblock %}
         </header>
 
         {% block breadcrumbs %}{% endblock %}
