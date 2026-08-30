@@ -70,6 +70,8 @@ The checked-in examples deploy at the root domain `https://wenku.qianxuesen.org/
 
 - `deploy/systemd/qian-wenku-web.service`
 - `deploy/nginx/wenku.qianxuesen.org.conf`
+- `deploy/nginx/www.qianxuesen.org.conf`
+- `deploy/www/` static landing page for `https://www.qianxuesen.org/`
 
 Install the package and virtual environment under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.
 
