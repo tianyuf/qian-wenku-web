@@ -1,6 +1,8 @@
 import hashlib
 import sqlite3
 
+from qian_wenku_web.app import create_app
+
 
 def test_startup_and_health(client):
     response = client.get("/health")
@@ -63,3 +65,55 @@ def test_not_found_routes(client):
     response = client.get("/api/missing")
     assert response.status_code == 404
     assert response.is_json
+
+
+def test_beta_login_flow(artifact_dir, monkeypatch):
+    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    beta_client = app.test_client()
+
+    response = beta_client.get("/browse?content_type=wenji")
+    assert response.status_code == 302
+    assert "/login?next=/browse?content_type%3Dwenji" in response.headers["Location"]
+    assert beta_client.get("/api/meta/stats").status_code == 401
+
+    wrong = beta_client.post(
+        "/login", data={"passphrase": "wrong", "next": "/browse"}
+    )
+    assert wrong.status_code == 200
+    assert "口令不正确" in wrong.get_data(as_text=True)
+
+    login = beta_client.post(
+        "/login",
+        data={"passphrase": "fixture-passphrase", "next": "/browse"},
+    )
+    assert login.status_code == 302
+    assert login.headers["Location"].endswith("/browse")
+    assert beta_client.get("/browse").status_code == 200
+
+    assert beta_client.post("/logout").status_code == 302
+    assert beta_client.get("/browse").status_code == 302
+
+
+def test_beta_login_rejects_external_redirects(artifact_dir, monkeypatch):
+    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    beta_client = app.test_client()
+    response = beta_client.post(
+        "/login",
+        data={"passphrase": "fixture-passphrase", "next": "https://example.com"},
+    )
+    assert response.headers["Location"].endswith("/")

@@ -27,6 +27,11 @@
                 <a class="nav-link {% if request.path.startswith('/browse/entit') %}active{% endif %}" href="{{ url_for('views.browse_entities') }}">人物机构</a>
                 <a class="nav-link {% if request.path.startswith('/date') or request.path == '/timeline' %}active{% endif %}" href="{{ url_for('views.browse_timeline') }}">时间线</a>
                 <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
+                {% if beta_auth_enabled %}
+                <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    <button type="submit" class="nav-link logout-button">退出</button>
+                </form>
+                {% endif %}
             </nav>
         </header>
 

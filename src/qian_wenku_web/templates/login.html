@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>内测登录 - 钱学森文库</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+    <main class="login-card">
+        <p class="login-kicker">QIAN WENKU</p>
+        <h1>钱学森文库</h1>
+        <p class="login-description">本站目前处于内测阶段，请输入访问口令。</p>
+        {% if error %}<p class="login-error" role="alert">{{ error }}</p>{% endif %}
+        <form method="post" class="login-form">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <label for="passphrase">访问口令</label>
+            <input id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
+            <button type="submit">进入文库</button>
+        </form>
+    </main>
+</body>
+</html>

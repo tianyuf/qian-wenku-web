@@ -62,6 +62,8 @@ flask --app qian_wenku_web.wsgi run
 
 Configuration is through `WENKU_ARTIFACT_DIR`, `R2_CDN_BASE`, and `R2_PREFIX`; see `.env.example`. Environment files are not loaded by the package itself.
 
+For a private beta, set `BETA_PASSPHRASE`, a long random `SECRET_KEY`, and `SESSION_COOKIE_SECURE=true` in the deployment environment. The passphrase is never stored in this repository. When `BETA_PASSPHRASE` is empty, login protection is disabled.
+
 ## Production
 
 The checked-in examples deploy at the root domain `https://wenku.qianxuesen.org/`:

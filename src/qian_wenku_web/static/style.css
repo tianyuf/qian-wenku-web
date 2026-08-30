@@ -950,3 +950,102 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     line-height: 1.6;
 }
 .otd-preview:hover { color: var(--accent); }
+/* Beta login */
+.login-page {
+    min-height: 100vh;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    background:
+        radial-gradient(circle at 20% 15%, rgba(146, 105, 54, 0.16), transparent 34rem),
+        #f3efe6;
+    color: #29251f;
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+}
+
+.login-card {
+    width: min(100%, 26rem);
+    padding: 3rem;
+    border: 1px solid rgba(82, 64, 43, 0.24);
+    background: rgba(255, 253, 248, 0.94);
+    box-shadow: 0 1.5rem 4rem rgba(55, 43, 29, 0.13);
+}
+
+.login-kicker {
+    margin: 0 0 1.25rem;
+    color: #8a6438;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+}
+
+.login-card h1 {
+    margin: 0;
+    font-family: "Noto Serif SC", Georgia, serif;
+    font-size: clamp(2rem, 8vw, 3rem);
+    font-weight: 600;
+}
+
+.login-description {
+    margin: 1rem 0 2rem;
+    color: #6c6256;
+    line-height: 1.7;
+}
+
+.login-error {
+    padding: 0.75rem 1rem;
+    border-left: 3px solid #9f3d2f;
+    background: #f8eae7;
+    color: #7e2d22;
+}
+
+.login-form {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.login-form label {
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
+.login-form input {
+    min-height: 3rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid #aaa093;
+    border-radius: 2px;
+    background: #fff;
+    font: inherit;
+}
+
+.login-form input:focus {
+    border-color: #8a6438;
+    outline: 3px solid rgba(138, 100, 56, 0.16);
+}
+
+.login-form button {
+    min-height: 3rem;
+    margin-top: 0.5rem;
+    border: 0;
+    border-radius: 2px;
+    background: #70502e;
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.login-form button:hover {
+    background: #573d22;
+}
+
+.logout-form {
+    display: contents;
+}
+
+.logout-button {
+    border: 0;
+    background: transparent;
+    font: inherit;
+}

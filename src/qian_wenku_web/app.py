@@ -3,7 +3,19 @@
 
 import os
 import logging
-from flask import Flask, jsonify, request, render_template
+import hmac
+from datetime import timedelta
+from urllib.parse import urlsplit
+
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from .database import NianpuDatabase
 
@@ -27,6 +39,17 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     app.config['R2_CDN_URL'] = (
         f"{app.config['R2_CDN_BASE'].rstrip('/')}/{app.config['R2_PREFIX'].strip('/')}"
     )
+    app.config['BETA_PASSPHRASE'] = os.getenv("BETA_PASSPHRASE", "")
+    app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "")
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower()
+        in {"1", "true", "yes"},
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    )
+    if app.config['BETA_PASSPHRASE'] and not app.config['SECRET_KEY']:
+        raise RuntimeError("SECRET_KEY is required when beta authentication is enabled")
 
     from .api.search import search_bp
     from .api.browse import browse_bp
@@ -41,6 +64,45 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     app.register_blueprint(views_bp)
 
+    def safe_next_url(value):
+        parsed = urlsplit(value or "")
+        if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+            return url_for("views.index")
+        return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+
+    @app.before_request
+    def require_beta_login():
+        if not app.config['BETA_PASSPHRASE']:
+            return None
+        if request.endpoint in {"login", "static", "health_check"}:
+            return None
+        if session.get("beta_authenticated"):
+            return None
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Authentication required"}), 401
+        return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if not app.config['BETA_PASSPHRASE']:
+            return redirect(url_for("views.index"))
+        error = None
+        next_url = safe_next_url(request.values.get("next"))
+        if request.method == 'POST':
+            supplied = request.form.get("passphrase", "")
+            if hmac.compare_digest(supplied, app.config['BETA_PASSPHRASE']):
+                session.clear()
+                session["beta_authenticated"] = True
+                session.permanent = True
+                return redirect(next_url)
+            error = "口令不正确"
+        return render_template('login.html', error=error, next_url=next_url)
+
+    @app.post('/logout')
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
     # Join app logger to gunicorn's error logger when running under gunicorn
     gunicorn_logger = logging.getLogger('gunicorn.error')
     if gunicorn_logger.handlers:
@@ -49,7 +111,10 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.context_processor
     def inject_asset_config():
-        return {"r2_cdn_url": app.config["R2_CDN_URL"]}
+        return {
+            "r2_cdn_url": app.config["R2_CDN_URL"],
+            "beta_auth_enabled": bool(app.config['BETA_PASSPHRASE']),
+        }
 
     @app.route('/health')
     def health_check():

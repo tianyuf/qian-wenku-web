@@ -8,7 +8,7 @@ Type=notify
 User=qian-wenku-web
 Group=qian-wenku-web
 WorkingDirectory=/opt/qian-wenku-web
-EnvironmentFile=-/opt/qian-wenku-web/.env
+EnvironmentFile=/opt/qian-wenku-web/.env
 Environment=WENKU_ARTIFACT_DIR=/opt/qian-wenku-web/artifacts
 Environment=GUNICORN_WORKERS=3
 ExecStartPre=/opt/qian-wenku-web/.venv/bin/python -m qian_wenku_web.preflight --artifact-dir /opt/qian-wenku-web/artifacts
