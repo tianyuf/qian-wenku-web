@@ -1005,6 +1005,16 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     width: 100%;
 }
 
+.login-access {
+    margin: 0.85rem 0 0;
+    text-align: center;
+    font-size: 0.82rem;
+}
+
+.login-access a {
+    color: var(--accent);
+}
+
 .logout-form {
     display: contents;
 }
