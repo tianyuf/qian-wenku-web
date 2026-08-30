@@ -95,7 +95,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 session["beta_authenticated"] = True
                 session.permanent = True
                 return redirect(next_url)
-            error = "口令不正确"
+            error = "Incorrect passphrase"
         return render_template('login.html', error=error, next_url=next_url)
 
     @app.post('/logout')

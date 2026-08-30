@@ -1,24 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}内测登录 - 钱学森文库{% endblock %}
+{% block html_lang %}en{% endblock %}
+{% block meta_description %}Private beta access to the Qian Xuesen Archive{% endblock %}
+{% block title %}Beta Access - Qian Xuesen Archive{% endblock %}
 {% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
-{% block header_nav %}<span class="beta-badge">内测</span>{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">Skip to main content</a>{% endblock %}
+{% block header_logo %}<a href="{{ url_for('login') }}" class="logo">Qian Xuesen Archive</a>{% endblock %}
+{% block header_nav %}<span class="beta-badge">Private Beta</span>{% endblock %}
 
 {% block content %}
 <main class="login-view" id="main">
     <section class="login-panel" aria-labelledby="login-title">
-        <span class="section-kicker">内测访问</span>
-        <h1 id="login-title">登录钱学森文库</h1>
-        <p class="login-description">本站目前处于内测阶段，请输入访问口令继续。</p>
+        <span class="section-kicker">Private Beta</span>
+        <h1 id="login-title">Access the Qian Xuesen Archive</h1>
+        <p class="login-description">This site is currently in private beta. Enter the access passphrase to continue.</p>
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <form method="post" class="login-form">
             <input type="hidden" name="next" value="{{ next_url }}">
             <div class="filter-group">
-                <label for="passphrase">访问口令</label>
+                <label for="passphrase">Access passphrase</label>
                 <input class="form-control" id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
             </div>
-            <button type="submit" class="btn btn-primary">进入文库</button>
-            <p class="login-access"><a href="mailto:info@qianxuesen.org">Need access?</a></p>
+            <button type="submit" class="btn btn-primary">Continue</button>
+            <p class="login-access"><a href="mailto:mail@qianxuesen.org">Need access?</a></p>
         </form>
     </section>
 </main>

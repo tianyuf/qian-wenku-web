@@ -88,7 +88,9 @@ def test_beta_login_flow(artifact_dir, monkeypatch):
         "/login", data={"passphrase": "wrong", "next": "/browse"}
     )
     assert wrong.status_code == 200
-    assert "口令不正确" in wrong.get_data(as_text=True)
+    assert "Incorrect passphrase" in wrong.get_data(as_text=True)
+    assert 'lang="en"' in wrong.get_data(as_text=True)
+    assert "mailto:mail@qianxuesen.org" in wrong.get_data(as_text=True)
 
     login = beta_client.post(
         "/login",
