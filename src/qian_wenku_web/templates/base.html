@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-<html lang="{% block html_lang %}zh-CN{% endblock %}">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{% block meta_description %}钱学森文库 — 钱学森年谱、文集与书信的数字化检索与研究平台{% endblock %}">
-    {% block meta %}{% endblock %}
+    <meta name="description" content="钱学森文库 — 钱学森年谱、文集与书信的数字化检索与研究平台">
     <title>{% block title %}钱学森文库{% endblock %}</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
@@ -15,15 +14,12 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
-    {% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+    <a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>
     <div class="app-wrapper">
         <header class="app-header">
-            {% block header_logo %}
             <a href="{{ url_for('views.index') }}" class="logo">
                 钱学森文库
             </a>
-            {% endblock %}
-            {% block header_nav %}
             <nav class="nav" aria-label="主导航">
                 <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('views.index') }}">搜索</a>
                 <a class="nav-link {% if request.path == '/browse' or (request.path.startswith('/browse/') and not request.path.startswith('/browse/recipient') and not request.path.startswith('/browse/entit')) %}active{% endif %}" href="{{ url_for('views.browse') }}">目录</a>
@@ -37,7 +33,6 @@
                 </form>
                 {% endif %}
             </nav>
-            {% endblock %}
         </header>
 
         {% block breadcrumbs %}{% endblock %}
