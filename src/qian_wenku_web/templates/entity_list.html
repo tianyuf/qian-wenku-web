@@ -1,0 +1,115 @@
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+{% extends "base.html" %}
+
+{% block title %}实体索引 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('人物机构', None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-outline-secondary btn-sm w-100">← 浏览</a>
+    </div>
+    <div class="filter-group">
+        <label for="person-search">搜索</label>
+        <form action="{{ url_for('views.browse_entities') }}" method="get" id="entity-search-form">
+            <input type="text" class="form-control form-control-sm" id="person-search"
+                   name="q" value="{{ query }}" placeholder="输入姓名或机构名…"
+                   autocomplete="off">
+            {% if entity_type %}<input type="hidden" name="type" value="{{ entity_type }}">{% endif %}
+            {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+        </form>
+    </div>
+    <div class="filter-group">
+        <label>类型</label>
+        <div class="d-flex flex-column gap-1">
+            <a href="{{ url_for('views.browse_entities', sort=sort, q=query) }}"
+               class="btn btn-sm {% if not entity_type %}btn-primary{% else %}btn-outline-secondary{% endif %} w-100">全部</a>
+            <a href="{{ url_for('views.browse_entities', type='person', sort=sort, q=query) }}"
+               class="btn btn-sm {% if entity_type == 'person' %}btn-primary{% else %}btn-outline-secondary{% endif %} w-100">人物</a>
+            <a href="{{ url_for('views.browse_entities', type='organization', sort=sort, q=query) }}"
+               class="btn btn-sm {% if entity_type == 'organization' %}btn-primary{% else %}btn-outline-secondary{% endif %} w-100">机构</a>
+        </div>
+    </div>
+    <div class="filter-group">
+        <label for="entity-sort">排序</label>
+        <select class="form-select form-select-sm" id="entity-sort" onchange="window.location.href=this.value">
+            <option value="{{ url_for('views.browse_entities', type=entity_type, sort='total', q=query) }}" {% if sort == 'total' %}selected{% endif %}>总提及数</option>
+            <option value="{{ url_for('views.browse_entities', type=entity_type, sort='nianpu', q=query) }}" {% if sort == 'nianpu' %}selected{% endif %}>年谱提及</option>
+            <option value="{{ url_for('views.browse_entities', type=entity_type, sort='wenji', q=query) }}" {% if sort == 'wenji' %}selected{% endif %}>文集提及</option>
+            <option value="{{ url_for('views.browse_entities', type=entity_type, sort='shuxin', q=query) }}" {% if sort == 'shuxin' %}selected{% endif %}>书信数量</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <p class="text-muted small">共 {{ total }} 条</p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <h6 class="section-kicker">人物与机构目录</h6>
+    <div class="source-grid" id="person-grid">
+        {% for p in entities %}
+        <a href="{{ url_for('views.browse_entity', entity_id=p.id, sort=sort) }}" class="source-card entity-card"
+           data-name="{{ p.name }}" data-type="{{ p.type }}">
+            <span class="source-card-title">
+                {{ p.name }}
+                {% if p.type == 'organization' %}
+                <span class="entity-type-badge organization" style="margin-left:0.3rem;">机构</span>
+                {% elif p.type == 'person' %}
+                <span class="entity-type-badge person" style="margin-left:0.3rem;">人物</span>
+                {% endif %}
+            </span>
+            <span class="source-card-meta">
+                {% if p.nianpu_count %}年谱 {{ p.nianpu_count }}{% endif %}
+                {% if p.nianpu_count and (p.wenji_count or p.shuxin_count) %} · {% endif %}
+                {% if p.wenji_count %}文集 {{ p.wenji_count }}{% endif %}
+                {% if p.wenji_count and p.shuxin_count %} · {% endif %}
+                {% if p.shuxin_count %}书信 {{ p.shuxin_count }}{% endif %}
+                {% if not p.nianpu_count and not p.wenji_count and not p.shuxin_count %}—{% endif %}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if total > limit %}
+    <nav class="result-nav" style="margin-top:1.5rem;">
+        {% if offset > 0 %}
+        <a href="{{ url_for('views.browse_entities', type=entity_type, sort=sort, limit=limit, offset=offset-limit, q=query) }}">上一页</a>
+        {% endif %}
+        <span class="result-nav-page">{{ offset + 1 }}–{{ [offset + limit, total] | min }} / {{ total }}</span>
+        {% if offset + limit < total %}
+        <a href="{{ url_for('views.browse_entities', type=entity_type, sort=sort, limit=limit, offset=offset+limit, q=query) }}">下一页</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% if not entities %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">未找到人物或机构</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Submit form on Enter (native form submit) and also on debounce for live feel
+var searchInput = document.getElementById('person-search');
+if (searchInput) {
+    var timer;
+    searchInput.addEventListener('input', function() {
+        clearTimeout(timer);
+        timer = setTimeout(function() { document.getElementById('entity-search-form').submit(); }, 400);
+    });
+}
+</script>
+{% endblock %}

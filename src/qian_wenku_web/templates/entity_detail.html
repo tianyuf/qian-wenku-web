@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ entity.name }} - 实体 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('人物机构', url_for('views.browse_entities')), (entity.name, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left" role="complementary" aria-label="实体导航">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse_entities', sort=sort) }}" class="btn btn-outline-secondary btn-sm w-100">← 实体目录</a>
+    </div>
+
+    <div class="d-flex flex-column gap-2 mb-3">
+        {% if prev_entity %}
+        <a href="{{ url_for('views.browse_entity', entity_id=prev_entity.id, sort=sort) }}" class="nav-card">
+            <div class="nav-label">上一位</div>
+            <div class="nav-date">{{ prev_entity.name }}</div>
+        </a>
+        {% endif %}
+
+        {% if next_entity %}
+        <a href="{{ url_for('views.browse_entity', entity_id=next_entity.id, sort=sort) }}" class="nav-card">
+            <div class="nav-label">下一位</div>
+            <div class="nav-date">{{ next_entity.name }}</div>
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="filter-group">
+        <p class="text-muted small">
+            {% if entity.type == 'organization' %}<span class="entity-type-badge organization">机构</span>{% elif entity.type == 'person' %}<span class="entity-type-badge person">人物</span>{% endif %}
+            {% if entity.nianpu_count %}年谱 {{ entity.nianpu_count }} 条{% endif %}
+            {% if entity.wenji_count %}<br>文集 {{ entity.wenji_count }} 条{% endif %}
+            {% if entity.shuxin_count %}<br>书信 {{ entity.shuxin_count }} 封{% endif %}
+        </p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <div class="entry-full-header">
+        <div class="entry-full-title">{{ entity.name }}
+            {% if entity.shuxin_count %}
+            {% if recipient_id %}<a href="{{ url_for('views.browse_recipient', recipient_id=recipient_id) }}" style="font-size:0.85rem; font-weight:400; color:var(--accent); margin-left:0.5rem;">书信 →</a>{% endif %}
+            {% endif %}
+        </div>
+        <div class="entry-full-source">
+            {% if entity.nianpu_count %}年谱 {{ entity.nianpu_count }} 条{% endif %}
+            {% if entity.nianpu_count and (entity.wenji_count or entity.shuxin_count) %} · {% endif %}
+            {% if entity.wenji_count %}文集 {{ entity.wenji_count }} 条{% endif %}
+            {% if entity.wenji_count and entity.shuxin_count %} · {% endif %}
+            {% if entity.shuxin_count %}书信 {{ entity.shuxin_count }} 封{% endif %}
+            {% if date_range %} · {{ date_range }}{% endif %}
+        </div>
+    </div>
+
+    {% for e in entries %}
+    {{ entry_card(e, source_id=e.source_id, pdf_start_page=e.pdf_start_page,
+                  total_pages=e.total_pages, source_title_for_pdf=e.source_title|tojson,
+                  pdf_available=e.pdf_available) }}
+    {% endfor %}
+
+    {% if not entries %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">暂无相关条目</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

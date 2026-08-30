@@ -1,0 +1,58 @@
+{# Reusable entry card macro for list views.
+   Required params:
+     e: entry dict with keys: id, date_display, source_title, title (optional),
+        content_type, preview (optional)
+   Optional params (for PDF button):
+     source_id, pdf_start_page, total_pages, source_title_for_pdf, pdf_available
+   Usage:
+     {% from 'entry_card.html' import entry_card %}
+     {{ entry_card(e, source_id=source.id, pdf_start_page=e.pdf_start_page,
+                   total_pages=source.total_pages, source_title_for_pdf=source.title|tojson) }}
+#}
+
+{% macro entry_card(e, source_id=None, pdf_start_page=None, total_pages=0,
+                    source_title_for_pdf='""', pdf_available=True) %}
+<div class="entry-card">
+    <div class="entry-header">
+        <div>
+            {% if e.content_type == 'shuxin' and e.title %}
+            <div style="font-weight:600; font-size:0.95rem;">{{ e.title }}</div>
+            <div class="entry-date" style="margin-top:0.1rem;">{{ e.date_display }}</div>
+            {% elif e.content_type == 'wenji' and e.title %}
+            <div style="font-weight:600; font-size:0.95rem;">{{ e.title }}</div>
+            <div class="entry-date" style="margin-top:0.1rem;">{{ e.date_display }}</div>
+            {% else %}
+            <div class="entry-date">{{ e.date_display }}</div>
+            {% endif %}
+            <div class="entry-source">
+                {% if e.content_type == 'nianpu' %}
+                <span class="content-type-badge nianpu">年谱</span>
+                {% elif e.content_type == 'wenji' %}
+                <span class="content-type-badge wenji">文集</span>
+                {% elif e.content_type == 'shuxin' %}
+                <span class="content-type-badge shuxin">书信</span>
+                {% endif %}
+                {{ e.source_title }}
+            </div>
+        </div>
+        <div class="entry-actions">
+            {% if pdf_available and source_id and pdf_start_page %}
+            <button class="btn btn-sm btn-outline-secondary"
+                    onclick='loadPDF({{ source_id }}, {{ pdf_start_page }}, {{ total_pages or 0 }}, {{ source_title_for_pdf }}, this)'>
+                原文
+            </button>
+            {% endif %}
+            {% if e.permalink %}
+            <a href="{{ url_for('views.entry_permalink', permalink=e.permalink) }}" class="btn btn-sm btn-outline-secondary">详情</a>
+            {% else %}
+            <a href="{{ url_for('views.entry_detail', entry_id=e.id) }}" class="btn btn-sm btn-outline-secondary">详情</a>
+            {% endif %}
+        </div>
+    </div>
+    {% if e.preview %}
+    <div class="entry-content" style="font-family:'Noto Sans SC','Source Han Sans SC',-apple-system,sans-serif; font-size:0.92rem; line-height:1.7; color:var(--muted);">
+        {% if e.content %}{{ e.content|safe }}{% else %}{{ e.preview }}{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}

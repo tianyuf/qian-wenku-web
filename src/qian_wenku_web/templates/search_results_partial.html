@@ -1,0 +1,93 @@
+{% from 'entry_card.html' import entry_card %}
+
+{% set has_filters = query or year_start or year_end or content_type or selected_sources or extra_query %}
+{% if has_filters %}
+<div class="filter-chips" style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; margin-bottom:0.75rem;">
+    {% if query %}
+    <span class="filter-chip">{{ query }} <a href="{{ url_for('views.search_results', q2=extra_query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除关键词">×</a></span>
+    {% endif %}
+    {% if extra_query %}
+    <span class="filter-chip">{{ extra_query }} <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除缩小范围">×</a></span>
+    {% endif %}
+    {% if year_start or year_end %}
+    <span class="filter-chip">{{ year_start or '' }}–{{ year_end or '' }} <a href="{{ url_for('views.search_results', q=query, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除年份范围">×</a></span>
+    {% endif %}
+    {% if content_type %}
+    <span class="filter-chip">{{ {'nianpu': '年谱', 'wenji': '文集', 'shuxin': '书信'}[content_type] or content_type }} <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, source_id=selected_sources) }}" class="chip-remove" aria-label="移除类型筛选">×</a></span>
+    {% endif %}
+    {% for sid in selected_sources %}
+    <span class="filter-chip">{{ source_titles.get(sid, '来源#' ~ sid) }}
+        {% set remaining_sources = selected_sources[:loop.index0] + selected_sources[loop.index0+1:] if selected_sources|length > 1 else [] %}
+        <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=remaining_sources) }}" class="chip-remove" aria-label="移除来源">×</a>
+    </span>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="result-count">
+        {% if results %}
+            找到 <strong class="text-dark">{{ total }}</strong> 条结果
+            {% if query %}匹配「{{ query }}」{% endif %}
+            {% if extra_query %} + 「{{ extra_query }}」{% endif %}
+        {% elif query %}
+            未找到匹配「{{ query }}」的结果
+        {% endif %}
+    </div>
+    {% if results and total > 5 %}
+    <div class="narrow-search">
+        <input type="search" class="form-control form-control-sm" id="narrow-search-input"
+               placeholder="在结果中缩小范围…" style="width:200px; display:inline-block;"
+               value="{{ extra_query or '' }}"
+               onkeydown="if(event.key==='Enter'){ narrowSearch(this.value); }">
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function narrowSearch(term) {
+    var url = new URL(window.location.href);
+    if (term) { url.searchParams.set('q2', term); }
+    else { url.searchParams.delete('q2'); }
+    htmx.ajax('GET', url.pathname + url.search, {target: '#results-container', swap: 'innerHTML'});
+    history.replaceState(null, '', url.toString());
+}
+</script>
+
+{% if results %}
+    {% for entry in results %}
+    {{ entry_card(entry, source_id=entry.source_id, pdf_start_page=entry.pdf_start_page,
+                  total_pages=entry.total_pages, source_title_for_pdf=entry.source_title|tojson,
+                  pdf_available=entry.pdf_available) }}
+    {% endfor %}
+
+    {% if total > limit %}
+    <nav class="result-nav">
+        {% if offset > 0 %}
+        <a href="?q={{ query|urlencode }}&year_start={{ year_start or '' }}&year_end={{ year_end or '' }}&content_type={{ content_type or '' }}{% for sid in selected_sources %}&source_id={{ sid }}{% endfor %}&offset={{ offset - limit }}&limit={{ limit }}">← 上一页</a>
+        {% else %}
+        <span class="text-muted">← 上一页</span>
+        {% endif %}
+
+        {% set current_page = (offset // limit) + 1 %}
+        {% set total_pages = (total // limit) + (1 if total % limit else 0) %}
+        <span class="result-nav-page">{{ current_page }} / {{ total_pages }}</span>
+
+        {% if offset + limit < total %}
+        <a href="?q={{ query|urlencode }}&year_start={{ year_start or '' }}&year_end={{ year_end or '' }}&content_type={{ content_type or '' }}{% for sid in selected_sources %}&source_id={{ sid }}{% endfor %}&offset={{ offset + limit }}&limit={{ limit }}">下一页 →</a>
+        {% else %}
+        <span class="text-muted">下一页 →</span>
+        {% endif %}
+    </nav>
+    {% endif %}
+{% elif query %}
+<div class="text-center py-5 text-muted">
+    <p class="empty-title">未找到结果</p>
+    <p class="small">没有匹配「{{ query }}」的条目。请尝试其他关键词或调整筛选条件。</p>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+    <p class="empty-title">请输入搜索词开始探索文库内容</p>
+    <p class="small">支持关键词搜索、年份范围限定、内容类型筛选</p>
+</div>
+{% endif %}

@@ -1,0 +1,26 @@
+{# Reusable PDF sidebar macro.
+   Usage:
+     {% from 'pdf_sidebar.html' import pdf_sidebar %}
+     {{ pdf_sidebar() }}
+#}
+
+{% macro pdf_sidebar() %}
+<aside class="sidebar-right" role="complementary" aria-label="PDF 预览">
+    <div class="pdf-toolbar">
+        <div class="pdf-toolbar-title" id="pdf-source-title">PDF 原文</div>
+        <div class="pdf-toolbar-controls">
+            <button class="btn btn-sm btn-outline-light" onclick="prevPage()" title="上一页" aria-label="上一页">‹</button>
+            <input type="number" id="pdf-page-input" class="form-control form-control-sm" style="width:50px" value="1" min="1" aria-label="页码" onchange="goToPage(this.value)">
+            <span class="text-light">/</span>
+            <span id="pdf-page-total" class="text-light">—</span>
+            <button class="btn btn-sm btn-outline-light" onclick="nextPage()" title="下一页" aria-label="下一页">›</button>
+        </div>
+    </div>
+    <div class="pdf-viewer" id="pdf-viewer">
+        <div class="pdf-placeholder">
+            <p class="placeholder-title">PDF 预览</p>
+            <p>点击「原文」显示原文影像。</p>
+        </div>
+    </div>
+</aside>
+{% endmacro %}

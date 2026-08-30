@@ -1,0 +1,38 @@
+[Unit]
+Description=Qian Wenku public web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=qian-wenku-web
+Group=qian-wenku-web
+WorkingDirectory=/opt/qian-wenku-web
+EnvironmentFile=-/opt/qian-wenku-web/.env
+Environment=WENKU_ARTIFACT_DIR=/opt/qian-wenku-web/artifacts
+Environment=GUNICORN_WORKERS=3
+ExecStartPre=/opt/qian-wenku-web/.venv/bin/python -m qian_wenku_web.preflight --artifact-dir /opt/qian-wenku-web/artifacts
+ExecStart=/opt/qian-wenku-web/.venv/bin/gunicorn --bind=127.0.0.1:8000 --workers=${GUNICORN_WORKERS} --timeout=60 --access-logfile=- --error-logfile=- qian_wenku_web.wsgi:app
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/qian-wenku-web
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

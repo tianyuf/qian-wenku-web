@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}关于 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('关于', None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.index') }}" class="btn btn-outline-secondary btn-sm w-100">← 搜索</a>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">关于钱学森文库</h5>
+            <p class="card-text text-muted">钱学森文库是一个专注于钱学森先生年谱、文集与书信的数字化阅读与研究平台。本平台收录了钱学森先生的年谱资料、文集文章及书信，支持全文检索、按年浏览、PDF原文对照等功能。</p>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">使用方法</h5>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-2"><strong>搜索：</strong>在首页输入关键词，可按年份范围、内容类型、来源筛选；搜索结果中可用「在结果中缩小范围」进一步检索</li>
+                <li class="mb-2"><strong>时间线：</strong>按年代热力图总览全部条目密度，点击年份查看年历，再点击具体日期查看当日全部条目（年谱、文集、书信）</li>
+                <li class="mb-2"><strong>目录：</strong>按来源卷册浏览年谱、文集与书信</li>
+                <li class="mb-2"><strong>人物机构：</strong>浏览条目中提及的人物与机构，查看各实体的出现频率与相关条目</li>
+                <li class="mb-2"><strong>收信人：</strong>按收信人浏览书信往来</li>
+                <li class="mb-2"><strong>PDF：</strong>点击条目中的「原文」按钮，右侧自动显示对应 PDF 扫描页</li>
+                <li class="mb-2"><strong>引用：</strong>每个条目页提供标准引用格式与永久链接，可一键复制</li>
+                <li class="mb-2"><strong>连续阅读：</strong>在条目页点击「连续阅读下一条」可自动加载后续条目</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">数据规模</h5>
+            <p class="card-text text-muted">
+                {% if stats %}
+                共收录 <strong>{{ stats.entries }}</strong> 条记录，
+                其中年谱 <strong>{{ stats.nianpu_count or 0 }}</strong> 条、
+                文集 <strong>{{ stats.wenji_count or 0 }}</strong> 篇、
+                书信 <strong>{{ stats.shuxin_count or 0 }}</strong> 封。
+                时间跨度 <strong>{{ stats.year_range[0] }}</strong>–<strong>{{ stats.year_range[1] }}</strong> 年，
+                涉及收信人 <strong>{{ stats.recipient_count }}</strong> 位、
+                人物与机构 <strong>{{ stats.entity_count }}</strong> 个。
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">数据来源</h5>
+            <ul class="text-muted">
+                <li>钱学森年谱（上、下）</li>
+                <li>钱学森文集（第1–6卷）</li>
+                <li>钱学森书信（第2–10卷）</li>
+                <li>钱学森书信补编（第1–5卷）</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">联系方式</h5>
+            <p class="card-text text-muted">
+                编者：Tianyu Fang<br>
+                个人主页：<a href="https://www.tianyufang.net/" style="color:inherit;">www.tianyufang.net</a><br>
+                联系邮箱：<a href="mailto:mail@qianxuesen.org" style="color:inherit;">mail@qianxuesen.org</a>
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}

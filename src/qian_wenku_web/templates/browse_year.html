@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ display_date }} - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('目录', url_for('views.browse')), (display_date, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left" role="complementary" aria-label="年份筛选">
+    <div class="filter-group">
+        <label>年份导航</label>
+        <div class="d-flex gap-1 justify-content-between">
+            {% if prev_year %}
+            <a href="{{ url_for('views.browse_year', year=prev_year) }}" class="btn btn-sm btn-outline-secondary">← {{ prev_year }}</a>
+            {% else %}
+            <span class="btn btn-sm btn-outline-secondary disabled">←</span>
+            {% endif %}
+            {% if next_year %}
+            <a href="{{ url_for('views.browse_year', year=next_year) }}" class="btn btn-sm btn-outline-secondary">{{ next_year }} →</a>
+            {% else %}
+            <span class="btn btn-sm btn-outline-secondary disabled">→</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <label>筛选月份</label>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:3px;">
+            {% if month %}
+            <a href="{{ url_for('views.browse_year', year=year) }}"
+               class="btn btn-sm btn-outline-secondary"
+               style="font-size:0.8rem; padding:3px 0; grid-column:span 4;">全年</a>
+            {% endif %}
+            {% for m in range(1, 13) %}
+            <a href="?month={{ m }}"
+               class="btn btn-sm {% if month == m %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+               style="font-size:0.8rem; padding:3px 0;">
+                {{ m }}月
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <p class="text-muted small">
+            {{ display_date }}<br>
+            共 {{ count }} 条记录
+            {% if grouped.nianpu %}<br>年谱 {{ grouped.nianpu|length }}{% endif %}
+            {% if grouped.wenji %} · 文集 {{ grouped.wenji|length }}{% endif %}
+            {% if grouped.shuxin %} · 书信 {{ grouped.shuxin|length }}{% endif %}
+        </p>
+    </div>
+
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse_timeline', year=year) }}" class="btn btn-sm btn-outline-secondary w-100">年历视图</a>
+    </div>
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-sm btn-outline-secondary w-100">← 目录</a>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <div class="entry-full-header">
+        <div class="entry-full-date">{{ display_date }}</div>
+        <div class="entry-full-source">
+            {{ count }} 条记录
+            {% if grouped.nianpu %}<span class="content-type-badge nianpu">年谱 {{ grouped.nianpu|length }}</span>{% endif %}
+            {% if grouped.wenji %}<span class="content-type-badge wenji">文集 {{ grouped.wenji|length }}</span>{% endif %}
+            {% if grouped.shuxin %}<span class="content-type-badge shuxin">书信 {{ grouped.shuxin|length }}</span>{% endif %}
+        </div>
+    </div>
+
+    {% for ct_name, ct_label in [('nianpu', '年谱'), ('wenji', '文集'), ('shuxin', '书信')] %}
+    {% if grouped[ct_name] %}
+    <div style="padding: 0.75rem 0.95rem 0; {% if not loop.first %}border-top: 1px solid var(--border);{% endif %}">
+        <h6 class="section-kicker" style="margin-bottom: 0.5rem;">{{ ct_label }} <span class="content-type-badge {{ ct_name }}">{{ grouped[ct_name]|length }}</span></h6>
+    </div>
+    {% for e in grouped[ct_name] %}
+    {{ entry_card(e, source_id=e.source_id, pdf_start_page=e.pdf_start_page,
+                  total_pages=e.total_pages, source_title_for_pdf=e.source_title|tojson,
+                  pdf_available=e.pdf_path) }}
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+
+    {% if not entries %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">{% if month %}该月暂无记录{% else %}该年份暂无记录{% endif %}</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

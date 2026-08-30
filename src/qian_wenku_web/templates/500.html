@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}服务器错误 - 钱学森文库{% endblock %}
+
+{% block content %}
+<section class="content-center" id="main" role="main" style="padding:2rem;">
+    <h1 class="entry-full-title">服务器错误</h1>
+    <p class="text-muted">请求暂时无法完成。请返回上一页或重新搜索。</p>
+    <a href="{{ url_for('views.index') }}" class="btn btn-sm btn-outline-secondary">返回搜索</a>
+</section>
+{% endblock %}

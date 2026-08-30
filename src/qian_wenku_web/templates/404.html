@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block title %}页面未找到 - 钱学森文库{% endblock %}
+
+{% block content %}
+<section class="content-center" id="main" role="main">
+    <div class="text-center py-5">
+        <p class="placeholder-title" style="font-size:1.5rem;">404</p>
+        <p class="text-muted">请求的页面不存在。</p>
+        <a href="{{ url_for('views.index') }}" class="btn btn-outline-secondary mt-3">返回首页</a>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}时间线 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('时间线', None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left" role="complementary" aria-label="年份导航">
+    <div class="filter-group">
+        <label>年份</label>
+        <div class="year-list">
+            <a href="{{ url_for('views.browse_timeline') }}"
+               class="year-link {% if not selected_year %}active{% endif %}">
+                <span>总览</span>
+            </a>
+            {% for y in years %}
+            <a href="{{ url_for('views.browse_timeline', year=y) }}"
+               class="year-link {% if y == selected_year %}active{% endif %}">
+                <span>{{ y }}</span>
+                <span class="text-muted">{{ year_counts[y] }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    {% if not selected_year %}
+    <div class="entry-full-header">
+        <div class="entry-full-date">时间线总览</div>
+        <div class="entry-full-source">{{ year_range|length }} 年 · 点击年份查看年历</div>
+    </div>
+
+    <div class="heatmap-wrap">
+        {% for decade_start in range(year_range[0], year_range[-1] + 1, 10) %}
+        <div class="heatmap-row">
+            <span class="heatmap-month">{{ decade_start }}年代</span>
+            <div class="heatmap-days year-cells">
+                {% for y in range(decade_start, [decade_start + 10, year_range[-1] + 1]|min) %}
+                {% set n = year_counts.get(y, 0) %}
+                {% if n == 0 %}
+                <span class="year-cell hm-0" title="{{ y }} · 无记录">{{ y }}</span>
+                {% else %}
+                {% set ratio = n / max_year_count %}
+                <a class="year-cell {% if ratio <= 0.1 %}hm-1{% elif ratio <= 0.3 %}hm-2{% elif ratio <= 0.6 %}hm-3{% else %}hm-4{% endif %}"
+                   href="{{ url_for('views.browse_timeline', year=y) }}"
+                   title="{{ y }} · {{ n }} 条">{{ y }}</a>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        <div class="heatmap-legend text-muted small">
+            <span>少</span>
+            <span class="hm-cell hm-1"></span>
+            <span class="hm-cell hm-2"></span>
+            <span class="hm-cell hm-3"></span>
+            <span class="hm-cell hm-4"></span>
+            <span>多</span>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="entry-full-header">
+        <div class="entry-full-date">{{ selected_year }} 年历</div>
+        <div class="entry-full-source">{{ year_counts[selected_year] }} 条记录 · 点击日期查看详情</div>
+    </div>
+
+    <div class="heatmap-wrap">
+        {% for m in range(1, 13) %}
+        <div class="heatmap-row">
+            <a class="heatmap-month" href="{{ url_for('views.browse_date', date_iso='%04d-%02d'|format(selected_year, m)) }}">{{ m }}月</a>
+            <div class="heatmap-days">
+                {% for d in range(1, 32) %}
+                {% set md = '%02d-%02d'|format(m, d) %}
+                {% if md not in valid_days %}
+                <span class="hm-cell hm-invalid"></span>
+                {% else %}
+                {% set iso = '%04d-%02d-%02d'|format(selected_year, m, d) %}
+                {% set n = counts.get(iso, 0) %}
+                {% if n == 0 %}
+                <span class="hm-cell hm-0" title="{{ iso }}"></span>
+                {% else %}
+                <a class="hm-cell {% if n == 1 %}hm-1{% elif n <= 3 %}hm-2{% elif n <= 6 %}hm-3{% else %}hm-4{% endif %}"
+                   href="{{ url_for('views.browse_date', date_iso=iso) }}"
+                   aria-label="{{ iso }}，{{ n }} 条记录"
+                   title="{{ iso }} · {{ n }} 条"></a>
+                {% endif %}
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        <div class="heatmap-legend text-muted small">
+            <span>少</span>
+            <span class="hm-cell hm-1"></span>
+            <span class="hm-cell hm-2"></span>
+            <span class="hm-cell hm-3"></span>
+            <span class="hm-cell hm-4"></span>
+            <span>多</span>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

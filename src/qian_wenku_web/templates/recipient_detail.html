@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ recipient.name }} - 收信人 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('收信人', url_for('views.browse_recipients')), (recipient.name, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left" role="complementary" aria-label="收信人导航">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse_recipients') }}" class="btn btn-outline-secondary btn-sm w-100">← 收信人目录</a>
+    </div>
+
+    <div class="d-flex flex-column gap-2 mb-3">
+        {% if prev_recipient %}
+        <a href="{{ url_for('views.browse_recipient', recipient_id=prev_recipient.id) }}" class="nav-card">
+            <div class="nav-label">上一位</div>
+            <div class="nav-date">{{ prev_recipient.name }}</div>
+        </a>
+        {% endif %}
+
+        {% if next_recipient %}
+        <a href="{{ url_for('views.browse_recipient', recipient_id=next_recipient.id) }}" class="nav-card">
+            <div class="nav-label">下一位</div>
+            <div class="nav-date">{{ next_recipient.name }}</div>
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="filter-group">
+        <p class="text-muted small">{{ recipient.letter_count }} 封信 · {{ date_range }}</p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <div class="entry-full-header">
+        <div class="entry-full-title">{{ recipient.name }}</div>
+        <div class="entry-full-source">{{ recipient.letter_count }} 封信{% if date_range %} · {{ date_range }}{% endif %}</div>
+    </div>
+
+    {% for letter in letters %}
+    {{ entry_card(letter, source_id=letter.source_id, pdf_start_page=letter.pdf_start_page,
+                  total_pages=letter.total_pages, source_title_for_pdf=letter.source_title|tojson,
+                  pdf_available=letter.pdf_available) }}
+    {% endfor %}
+
+    {% if not letters %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">无书信</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

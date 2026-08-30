@@ -1,0 +1,20 @@
+{# Breadcrumb macro.
+   Usage: {% from 'breadcrumbs.html' import breadcrumbs %}
+         {{ breadcrumbs([('首页', url_for('views.index')), ('目录', url_for('views.browse'))]) }}
+   Last item is rendered as plain text (current page).
+#}
+
+{% macro breadcrumbs(items) %}
+{% if items %}
+<nav class="breadcrumbs" aria-label="面包屑导航" style="display:flex; align-items:center; gap:0.3rem; padding:0.4rem 0.95rem; border-bottom:1px solid var(--border-light); font-size:0.78rem; color:var(--muted); flex-shrink:0;">
+    {% for label, url in items %}
+    {% if not loop.last %}
+    <a href="{{ url }}" style="color:var(--muted); text-decoration:none;">{{ label }}</a>
+    <span style="color:var(--quiet);">›</span>
+    {% else %}
+    <span style="color:var(--text); font-weight:500;">{{ label }}</span>
+    {% endif %}
+    {% endfor %}
+</nav>
+{% endif %}
+{% endmacro %}

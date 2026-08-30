@@ -1,0 +1,110 @@
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+{% extends "base.html" %}
+
+{% block title %}{% if query %}搜索: {{ query }}{% else %}搜索文库{% endif %} - 钱学森文库{% endblock %}
+
+{% block content %}
+<!-- Left Sidebar: Filters -->
+<aside class="sidebar-left search-panel" role="complementary" aria-label="筛选">
+        <form id="search-form"
+           hx-get="{{ url_for('views.search_results') }}"
+           hx-target="#results-container"
+           hx-trigger="submit"
+           hx-push-url="true"
+           hx-indicator="#search-results"
+           hx-swap="innerHTML">
+
+        <div class="filter-group position-relative">
+            <label for="search-input">搜索关键词</label>
+            <input type="search" id="search-input" class="form-control form-control-sm search-input" name="q"
+                   value="{{ query or '' }}" placeholder="输入关键词..." autocomplete="off"
+                   hx-get="{{ url_for('views.search_suggest') }}"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#search-suggestions">
+            <div id="search-suggestions" role="listbox" aria-label="搜索建议"></div>
+        </div>
+
+        <div class="filter-group">
+            <label>年份范围</label>
+            <div class="d-flex gap-1 align-items-center">
+                <input type="number" class="form-control form-control-sm" name="year_start"
+                       placeholder="起始" value="{{ year_start or '' }}" min="1800" max="2100">
+                <span class="text-muted">—</span>
+                <input type="number" class="form-control form-control-sm" name="year_end"
+                       placeholder="结束" value="{{ year_end or '' }}" min="1800" max="2100">
+            </div>
+        </div>
+
+        <div class="filter-group">
+            <label>内容类型</label>
+            <div class="choice-list">
+                <label class="choice-row">
+                    <input type="radio" name="content_type" value="" {% if not content_type %}checked{% endif %}>
+                    <span>全部</span>
+                </label>
+                <label class="choice-row">
+                    <input type="radio" name="content_type" value="nianpu" {% if content_type == 'nianpu' %}checked{% endif %}>
+                    <span>年谱</span>
+                </label>
+                <label class="choice-row">
+                    <input type="radio" name="content_type" value="wenji" {% if content_type == 'wenji' %}checked{% endif %}>
+                    <span>文集</span>
+                </label>
+                <label class="choice-row">
+                    <input type="radio" name="content_type" value="shuxin" {% if content_type == 'shuxin' %}checked{% endif %}>
+                    <span>书信</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="filter-group">
+            <label>来源</label>
+            <div class="source-list">
+                {% for source in sources %}
+                <label class="choice-row">
+                    <input type="checkbox" name="source_id" value="{{ source.id }}" {% if source.id in selected_sources %}checked{% endif %}>
+                    <span>{{ source.title }}</span>
+                    <small>{{ source.entry_count }}</small>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">搜索</button>
+            <a href="{{ url_for('views.index') }}" class="btn btn-link btn-sm">清除</a>
+        </div>
+    </form>
+</aside>
+
+<!-- Resize handle -->
+<div class="resize-handle resize-handle-left"></div>
+
+<!-- Center: Results -->
+<section class="content-center" id="main" role="main" aria-label="搜索结果">
+    <div id="results-container">
+    {% if on_this_day %}
+    <div class="on-this-day" id="on-this-day">
+        <h6 class="section-kicker" style="margin-bottom: 0.5rem;">历史上的今天 · {{ today_label }}</h6>
+        {% for e in on_this_day[:6] %}
+        <div class="otd-row">
+            <a class="otd-year" href="{{ url_for('views.browse_date', date_iso=e.date_iso) }}">{{ e.date_iso[:4] }}</a>
+            <span class="content-type-badge {{ e.content_type }}">{{ {'nianpu': '年谱', 'wenji': '文集', 'shuxin': '书信'}[e.content_type] }}</span>
+            <a class="otd-preview" href="{{ url_for('views.entry_permalink', permalink=e.permalink) if e.permalink else url_for('views.entry_detail', entry_id=e.id) }}">{{ e.preview or '' }}…</a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div id="search-results" aria-live="polite">
+        {% include 'search_results_partial.html' %}
+    </div>
+    </div>
+</section>
+
+<!-- Resize handle -->
+<div class="resize-handle resize-handle-right"></div>
+
+<!-- Right Sidebar: PDF -->
+{{ pdf_sidebar() }}
+{% endblock %}

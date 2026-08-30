@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ display_date }} - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('时间线', url_for('views.browse_timeline')), (display_date, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left" role="complementary" aria-label="日期导航">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-sm btn-outline-secondary w-100">← 目录</a>
+        <a href="{{ url_for('views.browse_timeline', year=date_iso[:4]) }}" class="btn btn-sm btn-outline-secondary w-100 mt-1">年历</a>
+        {% if date_iso|length == 4 %}
+        <a href="{{ url_for('views.browse_year', year=date_iso[:4]) }}" class="btn btn-sm btn-outline-secondary w-100 mt-1">列表视图</a>
+        {% endif %}
+    </div>
+
+    <div class="filter-group">
+        <label for="date-picker">选择日期</label>
+        {% if date_iso|length == 10 %}
+        <input type="date" id="date-picker" class="form-control form-control-sm"
+               value="{{ date_iso }}" onchange="navigateToDate(this.value)">
+        {% else %}
+        <input type="text" id="date-picker" class="form-control form-control-sm"
+               value="{{ date_iso }}" placeholder="YYYY 或 YYYY-MM 或 YYYY-MM-DD"
+               onchange="navigateToDate(this.value)">
+        {% endif %}
+    </div>
+
+    {% if prev_date or next_date %}
+    <div class="d-flex flex-column gap-2 mb-3">
+        {% if prev_date %}
+        <a href="{{ url_for('views.browse_date', date_iso=prev_date) }}" class="nav-card">
+            <div class="nav-label">上一{{ '日' if prev_date|length == 10 else ('月' if prev_date|length == 7 else '年') }}</div>
+            <div class="nav-date">{{ prev_date }}</div>
+        </a>
+        {% endif %}
+
+        {% if next_date %}
+        <a href="{{ url_for('views.browse_date', date_iso=next_date) }}" class="nav-card">
+            <div class="nav-label">下一{{ '日' if next_date|length == 10 else ('月' if next_date|length == 7 else '年') }}</div>
+            <div class="nav-date">{{ next_date }}</div>
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="filter-group">
+        <p class="text-muted small">
+            {{ display_date }}<br>
+            共 {{ count }} 条记录
+            {% if grouped.nianpu %}<br>年谱 {{ grouped.nianpu|length }}{% endif %}
+            {% if grouped.wenji %} · 文集 {{ grouped.wenji|length }}{% endif %}
+            {% if grouped.shuxin %} · 书信 {{ grouped.shuxin|length }}{% endif %}
+        </p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <div class="entry-full-header">
+        <div class="entry-full-date">{{ display_date }}</div>
+        <div class="entry-full-source">
+            {{ count }} 条记录
+            {% if grouped.nianpu %}<span class="content-type-badge nianpu">年谱 {{ grouped.nianpu|length }}</span>{% endif %}
+            {% if grouped.wenji %}<span class="content-type-badge wenji">文集 {{ grouped.wenji|length }}</span>{% endif %}
+            {% if grouped.shuxin %}<span class="content-type-badge shuxin">书信 {{ grouped.shuxin|length }}</span>{% endif %}
+        </div>
+    </div>
+
+    {% if entities_on_date %}
+    <div style="padding: 0.6rem 0.95rem; border-bottom: 1px solid var(--border);">
+        <span class="text-muted small" style="margin-right: 0.4rem;">提及：</span>
+        {% for en in entities_on_date %}
+        <a href="{{ url_for('views.browse_entity', entity_id=en.id) }}"
+           class="entity-type-badge {{ en.type }}" style="text-decoration:none; margin: 0.15rem 0.15rem 0.15rem 0; display: inline-block;"
+           title="{{ '人物' if en.type == 'person' else '机构' }}">{{ en.name }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% for ct_name, ct_label in [('nianpu', '年谱'), ('wenji', '文集'), ('shuxin', '书信')] %}
+    {% if grouped[ct_name] %}
+    <div style="padding: 0.75rem 0.95rem 0; {% if not loop.first %}border-top: 1px solid var(--border);{% endif %}">
+        <h6 class="section-kicker" style="margin-bottom: 0.5rem;">{{ ct_label }} <span class="content-type-badge {{ ct_name }}">{{ grouped[ct_name]|length }}</span></h6>
+    </div>
+    {% for e in grouped[ct_name] %}
+    {{ entry_card(e, source_id=e.source_id, pdf_start_page=e.pdf_start_page,
+                  total_pages=e.total_pages, source_title_for_pdf=e.source_title|tojson,
+                  pdf_available=e.pdf_path) }}
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+
+    {% if approx_count %}
+    <div style="padding: 0.75rem 0.95rem 0; border-top: 1px solid var(--border);">
+        <h6 class="section-kicker" style="margin-bottom: 0.5rem;">相关条目 <span class="text-muted" style="font-weight:normal;">（日期不精确）</span> <span class="content-type-badge">{{ approx_count }}</span></h6>
+    </div>
+    {% for ct_name, ct_label in [('nianpu', '年谱'), ('wenji', '文集'), ('shuxin', '书信')] %}
+    {% if approx_grouped[ct_name] %}
+    <div style="padding: 0.4rem 0.95rem 0;">
+        <h6 class="section-kicker" style="margin-bottom: 0.4rem; font-size: 0.8rem;">{{ ct_label }} <span class="content-type-badge {{ ct_name }}">{{ approx_grouped[ct_name]|length }}</span></h6>
+    </div>
+    {% for e in approx_grouped[ct_name] %}
+    {{ entry_card(e, source_id=e.source_id, pdf_start_page=e.pdf_start_page,
+                  total_pages=e.total_pages, source_title_for_pdf=e.source_title|tojson,
+                  pdf_available=e.pdf_path) }}
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    {% if not entries and not approx_count %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">该日期暂无条目</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function navigateToDate(val) {
+    if (val) window.location.href = '{{ url_for('views.browse_date', date_iso='__D__') }}'.replace('__D__', val);
+}
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.metaKey || e.ctrlKey) return;
+    {% if prev_date %}
+    if (e.key === 'ArrowLeft') { e.preventDefault(); window.location.href = '{{ url_for('views.browse_date', date_iso=prev_date) }}'; }
+    {% endif %}
+    {% if next_date %}
+    if (e.key === 'ArrowRight') { e.preventDefault(); window.location.href = '{{ url_for('views.browse_date', date_iso=next_date) }}'; }
+    {% endif %}
+});
+</script>
+{% endblock %}

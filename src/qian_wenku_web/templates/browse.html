@@ -1,0 +1,70 @@
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+{% extends "base.html" %}
+
+{% block title %}浏览 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('目录', None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.index') }}" class="btn btn-outline-secondary btn-sm w-100">← 返回搜索</a>
+    </div>
+    <div class="filter-group">
+        <p class="text-muted small">按类型和来源浏览内容。</p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    {% if wenji_sources %}
+    <h6 class="section-kicker">文集</h6>
+    <div class="source-grid">
+        {% for source in wenji_sources %}
+        <a href="{{ url_for('views.browse_source', source_id=source.id) }}" class="source-card">
+            <span class="source-card-title">{{ source.title }}</span>
+            <span class="source-card-meta">{{ source.entry_count }} 篇文章{% if source.min_year %} · {{ source.min_year }}–{{ source.max_year }}{% endif %}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if shuxin_sources %}
+    <h6 class="section-kicker" {% if wenji_sources %}style="margin-top:1.5rem;"{% endif %}>书信</h6>
+    <div class="source-grid">
+        {% for source in shuxin_sources %}
+        <a href="{{ url_for('views.browse_source', source_id=source.id) }}" class="source-card">
+            <span class="source-card-title">{{ source.title }}</span>
+            <span class="source-card-meta">{{ source.entry_count }} 封信{% if source.min_year %} · {{ source.min_year }}–{{ source.max_year }}{% endif %}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if nianpu_sources %}
+    <h6 class="section-kicker" {% if wenji_sources or shuxin_sources %}style="margin-top:1.5rem;"{% endif %}>年谱</h6>
+    <div class="source-grid">
+        {% for source in nianpu_sources %}
+        <a href="{{ url_for('views.browse_source', source_id=source.id) }}" class="source-card">
+            <span class="source-card-title">{{ source.title }}</span>
+            <span class="source-card-meta">{{ source.entry_count }} 条 · {{ source.min_year or '未知' }}–{{ source.max_year or '未知' }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not wenji_sources and not shuxin_sources and not nianpu_sources %}
+    <div class="text-center py-5 text-muted">
+        <p class="empty-title">暂无数据</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

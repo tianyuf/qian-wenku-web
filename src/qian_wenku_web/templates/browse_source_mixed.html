@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ source.title }} - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('目录', url_for('views.browse')), (source.title, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-sm btn-outline-secondary w-100">← 来源列表</a>
+        <a href="{{ url_for('views.browse_recipients') }}" class="btn btn-sm btn-outline-secondary w-100 mt-2">收信人目录</a>
+    </div>
+    <div class="filter-group">
+        <label>来源信息</label>
+        <div class="small text-muted">
+            <p><strong>{{ source.title }}</strong></p>
+            <p>共 {{ total }} 条记录</p>
+            {% if type_counts.wenji %}<p>文集 {{ type_counts.wenji }} 篇</p>{% endif %}
+            {% if type_counts.shuxin %}<p>书信 {{ type_counts.shuxin }} 封</p>{% endif %}
+            {% if type_counts.nianpu %}<p>年谱 {{ type_counts.nianpu }} 条</p>{% endif %}
+            {% if source.total_pages %}<p>PDF {{ source.total_pages }} 页</p>{% endif %}
+        </div>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <h6 class="section-kicker">{{ source.title }} — 目录</h6>
+    <div class="source-grid" style="grid-template-columns: 1fr;">
+        {% for e in entries %}
+        {{ entry_card(e, source_id=source.id, pdf_start_page=e.pdf_start_page,
+                      total_pages=source.total_pages, source_title_for_pdf=source.title|tojson) }}
+        {% endfor %}
+    </div>
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

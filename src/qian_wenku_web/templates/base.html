@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="钱学森文库 — 钱学森年谱、文集与书信的数字化检索与研究平台">
+    <title>{% block title %}钱学森文库{% endblock %}</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>
+    <div class="app-wrapper">
+        <header class="app-header">
+            <a href="{{ url_for('views.index') }}" class="logo">
+                钱学森文库
+            </a>
+            <nav class="nav" aria-label="主导航">
+                <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('views.index') }}">搜索</a>
+                <a class="nav-link {% if request.path == '/browse' or (request.path.startswith('/browse/') and not request.path.startswith('/browse/recipient') and not request.path.startswith('/browse/entit')) %}active{% endif %}" href="{{ url_for('views.browse') }}">目录</a>
+                <a class="nav-link {% if request.path.startswith('/browse/recipient') %}active{% endif %}" href="{{ url_for('views.browse_recipients') }}">收信人</a>
+                <a class="nav-link {% if request.path.startswith('/browse/entit') %}active{% endif %}" href="{{ url_for('views.browse_entities') }}">人物机构</a>
+                <a class="nav-link {% if request.path.startswith('/date') or request.path == '/timeline' %}active{% endif %}" href="{{ url_for('views.browse_timeline') }}">时间线</a>
+                <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
+            </nav>
+        </header>
+
+        {% block breadcrumbs %}{% endblock %}
+        <div class="app-main">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script>
+        var R2_CDN = {{ r2_cdn_url|tojson }};
+        var pageMapping = null;
+
+        function getPageUrl(sourceId, page) {
+            if (!pageMapping) return null;
+            var src = pageMapping[String(sourceId)];
+            if (!src) return null;
+            var hash = src[String(page)];
+            if (!hash) return null;
+            return R2_CDN + '/' + hash + '.jpg';
+        }
+
+        // Load page mapping on first use
+        function ensureMapping(then) {
+            if (pageMapping !== null) { then(); return; }
+            fetch('{{ url_for("pdf.get_mapping") }}').then(function(r) { return r.json(); }).then(function(m) {
+                pageMapping = m; then();
+            }).catch(function() { then(); });
+        }
+
+        window.pdfState = { sourceId: null, currentPage: 1, totalPages: 0, title: '' };
+
+        function loadPDF(sourceId, page, totalPages, title, trigger) {
+            window.pdfState = { sourceId: sourceId, currentPage: page, totalPages: totalPages, title: title || '' };
+            document.querySelectorAll('.entry-card.is-selected').forEach(function(card) {
+                card.classList.remove('is-selected');
+            });
+            if (trigger) {
+                var card = trigger.closest('.entry-card');
+                if (card) card.classList.add('is-selected');
+            }
+            ensureMapping(updatePDFViewer);
+        }
+
+        function updatePDFViewer() {
+            var s = window.pdfState;
+            if (!s.sourceId) return;
+            var viewer = document.getElementById('pdf-viewer');
+            var pageInput = document.getElementById('pdf-page-input');
+            var pageTotal = document.getElementById('pdf-page-total');
+            var sourceTitle = document.getElementById('pdf-source-title');
+            if (viewer) {
+                viewer.innerHTML = '<div class="pdf-loading">正在载入第 ' + s.currentPage + ' 页</div>';
+                var url = getPageUrl(s.sourceId, s.currentPage);
+                if (url) {
+                    var img = new Image();
+                    img.alt = '第 ' + s.currentPage + ' 页扫描影像';
+                    img.onload = function() {
+                        viewer.innerHTML = '';
+                        viewer.appendChild(img);
+                        img.style.opacity = '1';
+                    };
+                    img.onerror = function() {
+                        viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+                    };
+                    img.src = url;
+                    img.style.opacity = '0';
+                    img.style.transition = 'opacity 0.2s';
+                } else {
+                    viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+                }
+            }
+            if (pageInput) pageInput.value = s.currentPage;
+            if (pageTotal) pageTotal.textContent = s.totalPages || '—';
+            if (sourceTitle) sourceTitle.textContent = s.title || 'PDF 原文';
+            updatePDFButtons();
+        }
+
+        function updatePDFButtons() {
+            var s = window.pdfState;
+            var prevBtn = document.querySelector('.pdf-toolbar [onclick="prevPage()"]');
+            var nextBtn = document.querySelector('.pdf-toolbar [onclick="nextPage()"]');
+            if (prevBtn) prevBtn.disabled = (s.currentPage <= 1);
+            if (nextBtn) nextBtn.disabled = (s.currentPage >= s.totalPages);
+        }
+
+        function prevPage() {
+            if (window.pdfState.currentPage > 1) { window.pdfState.currentPage--; ensureMapping(updatePDFViewer); }
+        }
+
+        function nextPage() {
+            if (window.pdfState.currentPage < window.pdfState.totalPages) { window.pdfState.currentPage++; ensureMapping(updatePDFViewer); }
+        }
+
+        function goToPage(p) {
+            p = parseInt(p);
+            if (p >= 1 && p <= window.pdfState.totalPages) { window.pdfState.currentPage = p; ensureMapping(updatePDFViewer); }
+        }
+
+        function copyCitation(text, btn) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() { showCopyFeedback(btn); }).catch(function() { fallbackCopy(text, btn); });
+            } else { fallbackCopy(text, btn); }
+        }
+
+        function fallbackCopy(text, btn) {
+            var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); showCopyFeedback(btn); } catch(e) {}
+            document.body.removeChild(ta);
+        }
+
+        function showCopyFeedback(btn) {
+            if (!btn) return;
+            var orig = btn.textContent; btn.textContent = '已复制';
+            setTimeout(function() { btn.textContent = orig; }, 1000);
+        }
+
+        document.addEventListener('click', function(e) {
+            var sug = document.getElementById('search-suggestions');
+            var box = document.querySelector('.search-panel');
+            if (sug && box && !box.contains(e.target)) sug.innerHTML = '';
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') { var sug = document.getElementById('search-suggestions'); if (sug) sug.innerHTML = ''; }
+        });
+
+        // Column resizing (mouse + keyboard)
+        (function() {
+            // Make resize handles keyboard-focusable separators
+            document.querySelectorAll('.resize-handle').forEach(function(h) {
+                h.setAttribute('role', 'separator');
+                h.setAttribute('tabindex', '0');
+                h.setAttribute('aria-orientation', 'vertical');
+                h.setAttribute('aria-label', '拖动调整列宽（左右箭头键）');
+            });
+
+            function resize(handle, delta) {
+                var isLeft = handle.classList.contains('resize-handle-left');
+                var sidebar = isLeft
+                    ? handle.previousElementSibling
+                    : handle.nextElementSibling;
+                if (!sidebar) return;
+                var startWidth = sidebar.offsetWidth;
+                var newWidth = isLeft ? startWidth + delta : startWidth - delta;
+                var minW = parseInt(getComputedStyle(sidebar).minWidth) || 180;
+                var maxW = parseInt(getComputedStyle(sidebar).maxWidth) || 600;
+                newWidth = Math.max(minW, Math.min(maxW, newWidth));
+                sidebar.style.flexBasis = newWidth + 'px';
+            }
+
+            document.addEventListener('mousedown', function(e) {
+                var handle = e.target.closest('.resize-handle');
+                if (!handle) return;
+
+                e.preventDefault();
+                handle.classList.add('dragging');
+
+                var startX = e.clientX;
+
+                function onMouseMove(ev) {
+                    resize(handle, ev.clientX - startX);
+                    startX = ev.clientX;
+                }
+
+                function onMouseUp() {
+                    handle.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            document.addEventListener('keydown', function(e) {
+                var handle = e.target.closest('.resize-handle');
+                if (!handle) return;
+                if (e.key === 'ArrowLeft') { e.preventDefault(); resize(handle, -16); }
+                else if (e.key === 'ArrowRight') { e.preventDefault(); resize(handle, 16); }
+            });
+        })();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

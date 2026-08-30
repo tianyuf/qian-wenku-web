@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from 'entry_card.html' import entry_card %}
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+
+{% block title %}{{ source.title }} - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('目录', url_for('views.browse')), (source.title, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-sm btn-outline-secondary w-100">← 来源列表</a>
+        <a href="{{ url_for('views.browse_recipients') }}" class="btn btn-sm btn-outline-secondary w-100 mt-2">收信人目录</a>
+    </div>
+    <div class="filter-group">
+        <label>来源信息</label>
+        <div class="small text-muted">
+            <p><strong>{{ source.title }}</strong></p>
+            <p>共 {{ letters|length }} 封信</p>
+            {% if source.total_pages %}
+            <p>共 {{ source.total_pages }} 页</p>
+            {% endif %}
+        </div>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <h6 class="section-kicker">{{ source.title }} — 按时序</h6>
+    <div class="source-grid" style="grid-template-columns: 1fr;">
+        {% for letter in letters %}
+        {{ entry_card(letter, source_id=source.id, pdf_start_page=letter.pdf_start_page,
+                      total_pages=source.total_pages, source_title_for_pdf=source.title|tojson,
+                      pdf_available=source.pdf_path) }}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <p class="empty-title">该卷暂无书信</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}

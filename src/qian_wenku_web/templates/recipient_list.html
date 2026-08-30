@@ -1,0 +1,77 @@
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+{% extends "base.html" %}
+
+{% block title %}收信人 - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('收信人', None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-outline-secondary btn-sm w-100">← 返回浏览</a>
+    </div>
+    <div class="filter-group">
+        <label for="recipient-search">搜索收信人</label>
+        <form action="{{ url_for('views.browse_recipients') }}" method="get" id="recipient-search-form">
+            <input type="text" class="form-control form-control-sm" id="recipient-search"
+                   name="q" value="{{ query }}" placeholder="输入姓名…"
+                   autocomplete="off">
+        </form>
+    </div>
+    <div class="filter-group">
+        <p class="text-muted small">共 {{ total }} 位收信人</p>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <h6 class="section-kicker">收信人目录</h6>
+    <div class="source-grid" id="recipient-grid">
+        {% for r in recipients %}
+        <a href="{{ url_for('views.browse_recipient', recipient_id=r.id) }}" class="source-card recipient-card" data-name="{{ r.name }}">
+            <span class="source-card-title">{{ r.name }}</span>
+            <span class="source-card-meta">{{ r.letter_count }} 封信</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if total > limit %}
+    <nav class="result-nav" style="margin-top:1.5rem;">
+        {% if offset > 0 %}
+        <a href="{{ url_for('views.browse_recipients', limit=limit, offset=offset-limit, q=query) }}">上一页</a>
+        {% endif %}
+        <span class="result-nav-page">{{ offset + 1 }}–{{ [offset + limit, total] | min }} / {{ total }}</span>
+        {% if offset + limit < total %}
+        <a href="{{ url_for('views.browse_recipients', limit=limit, offset=offset+limit, q=query) }}">下一页</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% if not recipients %}
+    <div class="text-muted" style="padding:2rem 0; text-align:center;">
+        <p class="placeholder-title">未找到收信人</p>
+    </div>
+    {% endif %}
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var searchInput = document.getElementById('recipient-search');
+if (searchInput) {
+    var timer;
+    searchInput.addEventListener('input', function() {
+        clearTimeout(timer);
+        timer = setTimeout(function() { document.getElementById('recipient-search-form').submit(); }, 400);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% from 'pdf_sidebar.html' import pdf_sidebar %}
+{% from 'breadcrumbs.html' import breadcrumbs %}
+{% extends "base.html" %}
+
+{% block title %}{{ source.title }} - 钱学森文库{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([('首页', url_for('views.index')), ('目录', url_for('views.browse')), (source.title, None)]) }}
+{% endblock %}
+
+{% block content %}
+<aside class="sidebar-left">
+    <div class="filter-group">
+        <a href="{{ url_for('views.browse') }}" class="btn btn-sm btn-outline-secondary w-100">← 所有来源</a>
+    </div>
+    <div class="filter-group">
+        <label>来源信息</label>
+        <div class="small text-muted">
+            <p><strong>{{ source.title }}</strong></p>
+            {% if source.volume_number %}<p>卷: {{ source.volume_number }}</p>{% endif %}
+            <p>共 {{ total }} 条记录</p>
+            <p>年份范围: {% if years %}{{ years[0].year }}–{{ years[-1].year }}{% else %}—{% endif %}</p>
+        </div>
+    </div>
+</aside>
+
+<div class="resize-handle resize-handle-left"></div>
+
+<section class="content-center" id="main" role="main">
+    <h6 class="section-kicker">
+        {{ source.title }} — 年份分布
+    </h6>
+    <div class="year-grid">
+        {% for y in years %}
+        <a href="{{ url_for('views.browse_year', year=y.year, source_id=source.id) }}">
+            <span class="year-num">{{ y.year }}</span>
+            <span class="year-count">{{ y.count }} 条</span>
+        </a>
+        {% else %}
+        <div class="text-center py-5 text-muted" style="grid-column:1/-1;">
+            <p class="empty-title">该来源暂无年份数据</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<div class="resize-handle resize-handle-right"></div>
+
+{{ pdf_sidebar() }}
+{% endblock %}
