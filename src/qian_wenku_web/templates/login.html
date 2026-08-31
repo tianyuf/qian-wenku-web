@@ -1,43 +1,29 @@
-<!DOCTYPE html>
-<html lang="en" class="login-document">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Private beta access to The Unofficial Qian Xuesen Archive">
-    <meta name="robots" content="noindex, nofollow">
-    <title>The Unofficial Qian Xuesen Archive</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body class="login-page">
-    <main class="login-page-content">
-        <header>
-            <h1>The Unofficial Qian Xuesen Archive</h1>
-            <p><em>A Digital Research Collection</em></p>
-        </header>
+{% extends "base.html" %}
 
-        <hr>
+{% block html_lang %}en{% endblock %}
+{% block meta_description %}Private beta access to The Unofficial Qian Xuesen Archive{% endblock %}
+{% block title %}The Unofficial Qian Xuesen Archive{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">Skip to main content</a>{% endblock %}
+{% block header_logo %}<a href="{{ url_for('login') }}" class="logo">The Unofficial Qian Xuesen Archive</a>{% endblock %}
+{% block header_nav %}<span class="beta-badge">Private Beta</span>{% endblock %}
 
-        <section aria-labelledby="login-title">
-            <h2 id="login-title">Private Beta</h2>
-            <p>This site is currently in private beta. Enter the access passphrase to continue.</p>
-            {% if error %}<p class="login-error" role="alert"><strong>{{ error }}</strong></p>{% endif %}
-
-            <div class="login-box">
-                <form method="post" class="login-form">
-                    <input type="hidden" name="next" value="{{ next_url }}">
-                    <label for="passphrase">Access passphrase:</label>
-                    <input id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
-                    <button type="submit">Enter the archive</button>
-                    <p class="login-access"><a href="mailto:mail@qianxuesen.org">Need access?</a></p>
-                </form>
+{% block content %}
+<main class="login-view" id="main">
+    <section class="login-panel" aria-labelledby="login-title">
+        <span class="section-kicker">Private Beta</span>
+        <h1 id="login-title">Access the Archive</h1>
+        <p class="login-description">This site is currently in private beta. Enter the access passphrase to continue.</p>
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" class="login-form">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <div class="filter-group">
+                <label for="passphrase">Access passphrase</label>
+                <input class="form-control" id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
             </div>
-        </section>
-
-        <hr>
-
-        <footer>
-            <p>Best viewed with any web browser.</p>
-        </footer>
-    </main>
-</body>
-</html>
+            <button type="submit" class="btn btn-primary">Continue</button>
+            <p class="login-access"><a href="mailto:mail@qianxuesen.org">Need access?</a></p>
+        </form>
+    </section>
+</main>
+{% endblock %}
