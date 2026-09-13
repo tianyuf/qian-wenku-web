@@ -106,6 +106,33 @@ Checked-in examples for the production deployment at `https://wenku.qianxuesen.o
 
 Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.
 
+### MCP server (for AI agents)
+
+A stdio MCP server (`qian-wenku-mcp`) wraps the JSON API so that agents like Claude can search and browse the corpus directly. Install extra deps and run:
+
+```bash
+pip install -e '.[mcp]'
+WENKU_BETA_PASSPHRASE=... qian-wenku-mcp
+```
+
+Or add it to an MCP client config (e.g. Claude Desktop):
+
+```json
+{
+  "mcpServers": {
+    "qian-wenku": {
+      "command": "qian-wenku-mcp",
+      "env": {
+        "WENKU_BASE_URL": "https://wenku.qianxuesen.org",
+        "WENKU_BETA_PASSPHRASE": "your-passphrase"
+      }
+    }
+  }
+}
+```
+
+Tools exposed: `search` (substring + filters), `get_entry` (full transcript + navigation), `list_sources` (volumes with entry counts and year ranges).
+
 ## 🔐 Security
 
 Please report security vulnerabilities privately to the repository maintainers rather than opening a public issue. Do not include production corpus data, credentials, private paths, or personal information in a report.
