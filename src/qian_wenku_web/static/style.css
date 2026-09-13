@@ -30,6 +30,30 @@ body {
     background: var(--bg);
 }
 
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+a:visited {
+    color: var(--accent);
+}
+
+/* Links inside page headers & meta blocks stay body-colored — they're
+   navigation, not body-text links. Use class .link-plain to opt in. */
+a.link-plain {
+    color: inherit;
+}
+a.link-plain:hover {
+    color: inherit;
+    text-decoration: underline;
+}
+
 .app-wrapper {
     display: flex;
     flex-direction: column;

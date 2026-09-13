@@ -170,16 +170,16 @@
 <section class="content-center" id="main" role="main" style="background:#fff; overflow-y:auto;">
     <div class="entry-full-header">
         {% if entry.content_type in ('wenji', 'shuxin') and entry.title %}
-        <div class="entry-full-title">{% if entry.content_type == 'shuxin' and recipients %}{% for r in recipients %}{% if not loop.first %}、{% endif %}<a href="{{ url_for('views.browse_recipient', recipient_id=r.id) }}" style="color:inherit;text-decoration:none;">{{ r.name }}</a>{% endfor %}{% else %}{{ entry.title }}{% endif %}</div>
+        <div class="entry-full-title">{% if entry.content_type == 'shuxin' and recipients %}{% for r in recipients %}{% if not loop.first %}、{% endif %}<a class="link-plain" href="{{ url_for('views.browse_recipient', recipient_id=r.id) }}">{{ r.name }}</a>{% endfor %}{% else %}{{ entry.title }}{% endif %}</div>
         {% if entry.date_display and entry.date_display != '日期不详' %}
-        <div class="entry-full-date">{% if entry.date_iso and entry.date_iso|length >= 10 %}<a href="{{ url_for('views.browse_date', date_iso=entry.date_iso[:10]) }}" style="color:inherit;text-decoration:none;">{{ entry.date_display }}</a>{% else %}{{ entry.date_display }}{% endif %}</div>
+        <div class="entry-full-date">{% if entry.date_iso and entry.date_iso|length >= 10 %}<a class="link-plain" href="{{ url_for('views.browse_date', date_iso=entry.date_iso[:10]) }}">{{ entry.date_display }}</a>{% else %}{{ entry.date_display }}{% endif %}</div>
         {% endif %}
         <div class="entry-full-source">{{ entry.source_title }}</div>
         {% if entry.source_attribution %}
         <div class="wenji-meta">{{ entry.source_attribution }}</div>
         {% endif %}
         {% else %}
-        <div class="entry-full-date">{% if entry.date_iso and entry.date_iso|length >= 10 %}<a href="{{ url_for('views.browse_date', date_iso=entry.date_iso[:10]) }}" style="color:inherit;text-decoration:none;">{{ entry.date_display }}</a>{% else %}{{ entry.date_display }}{% endif %}</div>
+        <div class="entry-full-date">{% if entry.date_iso and entry.date_iso|length >= 10 %}<a class="link-plain" href="{{ url_for('views.browse_date', date_iso=entry.date_iso[:10]) }}">{{ entry.date_display }}</a>{% else %}{{ entry.date_display }}{% endif %}</div>
         <div class="entry-full-source">{{ entry.source_title }}</div>
         {% if entry.date_original %}
         <div class="text-muted mt-1" style="font-size:0.85rem;">原文: {{ entry.date_original }}</div>
@@ -229,7 +229,7 @@
         <div class="citation-label">引用格式</div>
         <div class="citation-text">{{ entry.citation }}</div>
         <div class="citation-text text-muted" style="margin-top:0.3rem; font-size:0.8rem;">
-            永久链接：<a href="{{ url_for('views.entry_permalink', permalink=entry.permalink) }}" style="color:inherit;">{{ url_for('views.entry_permalink', permalink=entry.permalink) }}</a>
+            永久链接：<a href="{{ url_for('views.entry_permalink', permalink=entry.permalink) }}">{{ url_for('views.entry_permalink', permalink=entry.permalink) }}</a>
         </div>
     </div>
 
