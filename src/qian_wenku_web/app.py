@@ -76,6 +76,9 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             return None
         if request.endpoint in {"login", "static", "health_check"}:
             return None
+        # Public AI install doc: no auth required so chat harnesses can fetch it.
+        if request.path == "/mcp/install.md":
+            return None
         if session.get("beta_authenticated"):
             return None
         if request.path.startswith("/api/"):

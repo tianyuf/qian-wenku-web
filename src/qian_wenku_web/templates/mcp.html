@@ -26,7 +26,7 @@
                 相当于把整个文库的检索能力接入 AI 对话。
             </p>
             <p class="card-text text-muted mb-0">
-                您<strong>无需在自己电脑上安装任何软件</strong>，只要把下面的命令粘贴进终端运行一次，即可永久接入您的 AI 助手。
+                您<strong>无需在自己电脑上安装任何软件</strong>：只需把下方的链接粘贴进您的 AI 聊天框，AI 会替您完成配置。
             </p>
         </div>
     </div>
@@ -42,12 +42,32 @@
         </div>
     </div>
 
+    <div class="card mb-3 border-primary">
+        <div class="card-body">
+            <h5 class="card-title">一键接入（推荐）</h5>
+            <p class="card-text text-muted">
+                复制下方链接，把它粘贴到您的 AI 聊天里（OpenCode、Claude Code、Claude Desktop 等），
+                并说明"帮我安装这个 MCP"。AI 会自动编辑配置文件。
+            </p>
+            <div class="input-group mb-3">
+                <input type="text" class="form-control font-monospace" readonly
+                       value="https://wenku.qianxuesen.org/mcp/install.md"
+                       id="install-url-input" aria-label="MCP install document URL">
+                <button class="btn btn-primary" type="button" id="copy-install-url">
+                    复制链接
+                </button>
+            </div>
+            <p class="text-muted small mb-0">
+                AI 会询问您的<strong>访问口令</strong>（即本网站登录口令，向编者索取）。
+            </p>
+        </div>
+    </div>
+
     <div class="card mb-3">
         <div class="card-body">
-            <h5 class="card-title">快速接入</h5>
-            {% if beta_auth_enabled %}
+            <h5 class="card-title">手动配置（高级）</h5>
             <p class="card-text text-muted">
-                选择你使用的 AI 助手，复制下方命令并粘贴到终端运行即可。命令中<strong>已为您填好访问口令</strong>。
+                如果您不想用 AI 自动配置，也可以手动把以下内容加入客户端配置。
             </p>
             <ul class="nav nav-tabs mb-3" id="harnessTabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -62,33 +82,31 @@
             </ul>
             <div class="tab-content" id="harnessPanes">
                 <div class="tab-pane fade show active" id="pane-opencode" role="tabpanel">
-                    <p class="text-muted small mb-2">把本站加入 <code>~/.config/opencode/opencode.json</code>（若文件不存在会自动创建）：</p>
-                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-opencode">python3 -c "
-import json, pathlib
-p = pathlib.Path.home()/'.config/opencode/opencode.json'
-p.parent.mkdir(parents=True, exist_ok=True)
-cfg = json.loads(p.read_text()) if p.exists() else {}
-cfg.setdefault('mcp', {})['qian-wenku'] = {
-  'type': 'remote',
-  'url': 'https://wenku.qianxuesen.org/mcp/rpc',
-  'headers': {'Authorization': 'Bearer YOUR_TOKEN'}
-}
-p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + '\n')
-print('wrote', p)
-"</code></pre>
-                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制命令（含我的口令）</button>
-                    <p class="text-muted small mt-3 mb-0">运行完成后重启 OpenCode，本会话即可使用 <code>mcp_qian-wenku_*</code> 工具。</p>
+                    <p class="text-muted small mb-2">编辑 <code>~/.config/opencode/opencode.jsonc</code>（若不存在则用 <code>opencode.json</code>），在 <code>mcp</code> 部分加入：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-opencode">"qian-wenku": {
+  "type": "remote",
+  "url": "https://wenku.qianxuesen.org/mcp/rpc",
+  "headers": {
+    "Authorization": "Bearer YOUR_TOKEN"
+  }
+}</code></pre>
+                    {% if beta_auth_enabled and beta_authenticated %}
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制配置（含我的口令）</button>
+                    {% endif %}
+                    <p class="text-muted small mt-3 mb-0">然后重启 OpenCode。</p>
                 </div>
                 <div class="tab-pane fade" id="pane-claudecode" role="tabpanel">
-                    <p class="text-muted small mb-2">把本站加入 <code>~/.claude.json</code>（当前目录的作用域）：</p>
+                    <p class="text-muted small mb-2">在项目目录里运行：</p>
                     <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudecode">claude mcp add --transport http qian-wenku \
   https://wenku.qianxuesen.org/mcp/rpc \
   --header "Authorization: Bearer YOUR_TOKEN"</code></pre>
+                    {% if beta_auth_enabled and beta_authenticated %}
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudecode">复制命令（含我的口令）</button>
-                    <p class="text-muted small mt-3 mb-0">运行后，当前项目里就能用 <code>qian-wenku</code> 工具。</p>
+                    {% endif %}
+                    <p class="text-muted small mt-3 mb-0">默认只对当前项目生效；如需全局，加 <code>--scope user</code>。</p>
                 </div>
                 <div class="tab-pane fade" id="pane-claudedesktop" role="tabpanel">
-                    <p class="text-muted small mb-2">打开 Claude Desktop 配置文件 <code>claude_desktop_config.json</code>，插入以下内容（macOS: <code>~/Library/Application Support/Claude/</code>；Windows: <code>%APPDATA%\Claude\</code>）：</p>
+                    <p class="text-muted small mb-2">编辑 <code>claude_desktop_config.json</code>（macOS: <code>~/Library/Application Support/Claude/</code>；Windows: <code>%APPDATA%\Claude\</code>），在 <code>mcpServers</code> 内加入：</p>
                     <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudedesktop">"qian-wenku": {
   "type": "http",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
@@ -96,26 +114,21 @@ print('wrote', p)
     "Authorization": "Bearer YOUR_TOKEN"
   }
 }</code></pre>
+                    {% if beta_auth_enabled and beta_authenticated %}
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置（含我的口令）</button>
-                    <p class="text-muted small mt-3 mb-0">保存并完全退出（重启）Claude Desktop 后生效。</p>
+                    {% endif %}
+                    <p class="text-muted small mt-3 mb-0">保存并完全退出（重启）Claude Desktop。</p>
                 </div>
             </div>
-
-            {% if beta_authenticated %}
-            {# Token made available to the copy handler; never rendered directly into visible markup. #}
+            {% if beta_auth_enabled and beta_authenticated %}
             <div id="mcp-user-token" style="display:none" data-token="{{ mcp_token_ejs|default('') }}"></div>
-            {% endif %}
-            {% else %}
-            <p class="card-text text-muted mb-0">
-                本站在未启用访问口令时任何人都能接入。请先在浏览器登录以获取命令。
-            </p>
             {% endif %}
         </div>
     </div>
 
     <div class="card mb-3">
         <div class="card-body">
-            <h5 class="card-title">服务地址</h5>
+            <h5 class="card-title">服务信息</h5>
             <ul class="text-muted mb-0">
                 <li><strong>MCP endpoint URL</strong>: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
                 <li><strong>请求头</strong>: <code>Authorization: Bearer 您的访问口令</code></li>
@@ -153,9 +166,21 @@ print('wrote', p)
 {% block extra_js %}
 <script>
 (function() {
+    var copyBtn = document.getElementById('copy-install-url');
+    var input = document.getElementById('install-url-input');
+    if (copyBtn && input) {
+        copyBtn.addEventListener('click', function() {
+            var orig = copyBtn.textContent;
+            function done() { copyBtn.textContent = '已复制'; setTimeout(function(){ copyBtn.textContent = orig; }, 1500); }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(input.value).then(done).catch(function(){ fallback(); done(); });
+            } else { fallback(); done(); }
+            function fallback() { input.select(); document.execCommand('copy'); }
+        });
+    }
+
     var tokenEl = document.getElementById('mcp-user-token');
     var token = tokenEl ? tokenEl.getAttribute('data-token') : '';
-    // Replace placeholder tokens in all command panels.
     if (token) {
         document.querySelectorAll('#harnessPanes code').forEach(function(el) {
             el.innerHTML = el.innerHTML.replace(/YOUR_TOKEN/g, escapeHtml(token));

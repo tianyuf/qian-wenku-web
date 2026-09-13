@@ -1322,3 +1322,132 @@ def mcp_guide():
         beta_authenticated=bool(session.get("beta_authenticated")),
         mcp_token_ejs=token,
     )
+
+
+@views_bp.route('/mcp/install.md')
+def mcp_install_doc():
+    """Public, unauthenticated install instructions for AI clients.
+
+    This document is designed to be handed to an agent (paste the URL into
+    an OpenCode or Claude chat). The agent follows the steps inside and
+    writes the MCP server entry itself. It never contains a real token —
+    the user is prompted to supply theirs.
+    """
+    from flask import Response
+    body = """# Install the Qian Wenku MCP server
+
+Give these instructions to your AI agent (OpenCode, Claude Code, Claude
+Desktop, Cursor, or any MCP-aware assistant). The agent will edit the
+appropriate config file for you.
+
+## What this installs
+
+A remote MCP server pointing at this site. It has three tools:
+
+- **search**: substring search over corpus entries; filters by year range, content
+  type (nianpu / wenji / shuxin), and source volume.
+- **get_entry**: fetch one entry by ID; returns full transcript, date, source,
+  page references, plus prev/next/same-day navigation.
+- **list_sources**: list every volume with entry counts and year ranges, so you
+  know what to filter by.
+
+The server is hosted — nothing runs on your machine. Your agent calls it
+over HTTPS.
+
+## What you need
+
+The **beta access passphrase** for this site. It doubles as the bearer
+token the server expects. If you don't have one, request it from
+mail@qianxuesen.org.
+
+Ask the user for that passphrase now if you don't already have it. Do
+NOT proceed with a placeholder.
+
+## How to install
+
+Follow the steps for the user's client. Do not invent config paths or
+fields — look them up if unsure.
+
+### OpenCode
+
+Config file:
+- Prefer `~/.config/opencode/opencode.jsonc` if it exists (JSON with
+  comments, the default for many installs).
+- Otherwise use `~/.config/opencode/opencode.json`.
+
+Read the existing file, preserving all existing top-level keys and any
+existing `mcp` entries. Merge in:
+
+```jsonc
+{
+  "mcp": {
+    "qian-wenku": {
+      "type": "remote",
+      "url": "https://wenku.qianxuesen.org/mcp/rpc",
+      "headers": { "Authorization": "Bearer USER_PASSPHRASE" }
+    }
+  }
+}
+```
+
+Replace `USER_PASSPHRASE` with the user's beta passphrase. Write the file
+back, preserving the user's `$schema` declaration and any comments.
+
+If `mcp.qian-wenku` already exists, stop and ask the user whether to
+overwrite. Never clobber silently.
+
+Tell the user: reload OpenCode (it is not hot-reloaded), then in the next
+session they can use tools named like `mcp_qian-wenku_search`.
+
+### Claude Code (CLI)
+
+Tell the user to run:
+
+```bash
+claude mcp add --transport http qian-wenku \\
+  https://wenku.qianxuesen.org/mcp/rpc \\
+  --header "Authorization: Bearer USER_PASSPHRASE"
+```
+
+Scope to current project by default; `--scope user` for all projects.
+
+### Claude Desktop
+
+Edit `claude_desktop_config.json`:
+- macOS: `~/Library/Application Support/Claude/`
+- Windows: `%APPDATA%\\Claude\\`
+
+Inside the existing `mcpServers` object, add:
+
+```jsonc
+"qian-wenku": {
+  "type": "http",
+  "url": "https://wenku.qianxuesen.org/mcp/rpc",
+  "headers": { "Authorization": "Bearer USER_PASSPHRASE" }
+}
+```
+
+Tell the user to fully quit and restart Claude Desktop.
+
+### Other MCP clients
+
+Any client that supports remote HTTP MCP servers with a static
+Authorization header works. The two things to wire up are always:
+
+- **URL**: `https://wenku.qianxuesen.org/mcp/rpc`
+- **Header**: `Authorization: Bearer USER_PASSPHRASE`
+
+## Verify it worked
+
+After the user reloads their client, ask them to type something like:
+"List the sources in qian-wenku" or "Search qian-wenku for 钱学森 in 1956".
+The tool call should return real data, not an error. If it fails, have them
+confirm the passphrase matches the website login and try again.
+
+## Privacy note
+
+The passphrase gives read access to the same corpus the website exposes.
+Do not share it. Do not commit config files containing it to version
+control.
+"""
+    return Response(body, content_type='text/markdown; charset=utf-8')
