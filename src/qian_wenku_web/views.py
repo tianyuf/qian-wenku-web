@@ -1307,5 +1307,18 @@ def about():
 
 @views_bp.route('/mcp')
 def mcp_guide():
-    """MCP (Model Context Protocol) usage guide."""
-    return render_template('mcp.html')
+    """MCP (Model Context Protocol) usage guide.
+
+    When beta auth is on and the user is logged in, the page also receives
+    their passphrase so the copy buttons can pre-fill commands with it.
+    """
+    from flask import current_app, session
+    token = ""
+    if current_app.config.get("BETA_PASSPHRASE") and session.get("beta_authenticated"):
+        token = current_app.config["BETA_PASSPHRASE"]
+    return render_template(
+        'mcp.html',
+        beta_auth_enabled=bool(current_app.config.get("BETA_PASSPHRASE")),
+        beta_authenticated=bool(session.get("beta_authenticated")),
+        mcp_token_ejs=token,
+    )

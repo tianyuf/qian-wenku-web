@@ -21,13 +21,12 @@
         <div class="card-body">
             <h5 class="card-title">什么是 MCP？</h5>
             <p class="card-text text-muted">
-                MCP（Model Context Protocol）是让 AI 助手（如 Claude）直接访问外部资料的标准协议。
+                MCP（Model Context Protocol）是让 AI 助手直接访问外部资料的标准协议。
                 本站托管了一个 MCP 服务，让 AI 助手可以直接检索文库条目、阅读全文、按年份和来源浏览——
                 相当于把整个文库的检索能力接入 AI 对话。
             </p>
             <p class="card-text text-muted mb-0">
-                您<strong>无需在自己电脑上安装任何软件</strong>，只要支持 MCP 的 AI 客户端
-                （如 Claude Desktop），把本站的服务地址和访问口令填进去即可。
+                您<strong>无需在自己电脑上安装任何软件</strong>，只要把下面的命令粘贴进终端运行一次，即可永久接入您的 AI 助手。
             </p>
         </div>
     </div>
@@ -45,39 +44,83 @@
 
     <div class="card mb-3">
         <div class="card-body">
-            <h5 class="card-title">接入方式</h5>
+            <h5 class="card-title">快速接入</h5>
+            {% if beta_auth_enabled %}
             <p class="card-text text-muted">
-                MCP 服务的地址与令牌（bearer token）如下所示。
-                访问口令就是本站账号口令，请向 <a href="mailto:mail@qianxuesen.org">mail@qianxuesen.org</a> 索取。
+                选择你使用的 AI 助手，复制下方命令并粘贴到终端运行即可。命令中<strong>已为您填好访问口令</strong>。
             </p>
-            <ul class="text-muted mb-0">
-                <li><strong>服务地址</strong>（MCP endpoint URL）: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
-                <li><strong>请求头</strong>： <code>Authorization: Bearer 您的口令</code></li>
+            <ul class="nav nav-tabs mb-3" id="harnessTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-opencode" data-bs-toggle="tab" data-bs-target="#pane-opencode" type="button" role="tab">OpenCode</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-claudecode" data-bs-toggle="tab" data-bs-target="#pane-claudecode" type="button" role="tab">Claude Code</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-claudedesktop" data-bs-toggle="tab" data-bs-target="#pane-claudedesktop" type="button" role="tab">Claude Desktop</button>
+                </li>
             </ul>
+            <div class="tab-content" id="harnessPanes">
+                <div class="tab-pane fade show active" id="pane-opencode" role="tabpanel">
+                    <p class="text-muted small mb-2">把本站加入 <code>~/.config/opencode/opencode.json</code>（若文件不存在会自动创建）：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-opencode">python3 -c "
+import json, pathlib
+p = pathlib.Path.home()/'.config/opencode/opencode.json'
+p.parent.mkdir(parents=True, exist_ok=True)
+cfg = json.loads(p.read_text()) if p.exists() else {}
+cfg.setdefault('mcp', {})['qian-wenku'] = {
+  'type': 'remote',
+  'url': 'https://wenku.qianxuesen.org/mcp/rpc',
+  'headers': {'Authorization': 'Bearer YOUR_TOKEN'}
+}
+p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + '\n')
+print('wrote', p)
+"</code></pre>
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制命令（含我的口令）</button>
+                    <p class="text-muted small mt-3 mb-0">运行完成后重启 OpenCode，本会话即可使用 <code>mcp_qian-wenku_*</code> 工具。</p>
+                </div>
+                <div class="tab-pane fade" id="pane-claudecode" role="tabpanel">
+                    <p class="text-muted small mb-2">把本站加入 <code>~/.claude.json</code>（当前目录的作用域）：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudecode">claude mcp add --transport http qian-wenku \
+  https://wenku.qianxuesen.org/mcp/rpc \
+  --header "Authorization: Bearer YOUR_TOKEN"</code></pre>
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudecode">复制命令（含我的口令）</button>
+                    <p class="text-muted small mt-3 mb-0">运行后，当前项目里就能用 <code>qian-wenku</code> 工具。</p>
+                </div>
+                <div class="tab-pane fade" id="pane-claudedesktop" role="tabpanel">
+                    <p class="text-muted small mb-2">打开 Claude Desktop 配置文件 <code>claude_desktop_config.json</code>，插入以下内容（macOS: <code>~/Library/Application Support/Claude/</code>；Windows: <code>%APPDATA%\Claude\</code>）：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudedesktop">"qian-wenku": {
+  "type": "http",
+  "url": "https://wenku.qianxuesen.org/mcp/rpc",
+  "headers": {
+    "Authorization": "Bearer YOUR_TOKEN"
+  }
+}</code></pre>
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置（含我的口令）</button>
+                    <p class="text-muted small mt-3 mb-0">保存并完全退出（重启）Claude Desktop 后生效。</p>
+                </div>
+            </div>
+
+            {% if beta_authenticated %}
+            {# Token made available to the copy handler; never rendered directly into visible markup. #}
+            <div id="mcp-user-token" style="display:none" data-token="{{ mcp_token_ejs|default('') }}"></div>
+            {% endif %}
+            {% else %}
+            <p class="card-text text-muted mb-0">
+                本站在未启用访问口令时任何人都能接入。请先在浏览器登录以获取命令。
+            </p>
+            {% endif %}
         </div>
     </div>
 
     <div class="card mb-3">
         <div class="card-body">
-            <h5 class="card-title">在 Claude Desktop 中使用</h5>
-            <p class="card-text text-muted">
-                打开 Claude Desktop 的配置文件 <code>claude_desktop_config.json</code>，加入：
-            </p>
-            <pre class="bg-light p-3 rounded"><code>{
-  "mcpServers": {
-    "qian-wenku": {
-      "type": "http",
-      "url": "https://wenku.qianxuesen.org/mcp/rpc",
-      "headers": {
-        "Authorization": "Bearer 您的口令"
-      }
-    }
-  }
-}</code></pre>
-            <p class="card-text text-muted mb-0">
-                保存并重启 Claude Desktop 后，可以直接对 Claude 说：
-                "帮我找出钱学森在 1956 年写给郭永怀的所有信件。"
-            </p>
+            <h5 class="card-title">服务地址</h5>
+            <ul class="text-muted mb-0">
+                <li><strong>MCP endpoint URL</strong>: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
+                <li><strong>请求头</strong>: <code>Authorization: Bearer 您的访问口令</code></li>
+                <li>访问口令即本网站登录口令，由编者分发；不要分享给他人。</li>
+            </ul>
         </div>
     </div>
 
@@ -105,4 +148,44 @@
         </div>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var tokenEl = document.getElementById('mcp-user-token');
+    var token = tokenEl ? tokenEl.getAttribute('data-token') : '';
+    // Replace placeholder tokens in all command panels.
+    if (token) {
+        document.querySelectorAll('#harnessPanes code').forEach(function(el) {
+            el.innerHTML = el.innerHTML.replace(/YOUR_TOKEN/g, escapeHtml(token));
+        });
+    }
+    function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, function(c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+        });
+    }
+    document.querySelectorAll('.copy-cmd').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var targetId = btn.getAttribute('data-target');
+            var el = document.getElementById(targetId);
+            if (!el) return;
+            var text = el.innerText;
+            var orig = btn.textContent;
+            function done() { btn.textContent = '已复制'; setTimeout(function(){ btn.textContent = orig; }, 1500); }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(); done(); });
+            } else { fallback(); done(); }
+            function fallback() {
+                var ta = document.createElement('textarea');
+                ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); } catch(e) {}
+                document.body.removeChild(ta);
+            }
+        });
+    });
+})();
+</script>
 {% endblock %}

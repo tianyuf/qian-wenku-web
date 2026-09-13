@@ -22,6 +22,7 @@ mcp = ["fastmcp>=2.10", "httpx>=0.27"]
 [project.scripts]
 qian-wenku-preflight = "qian_wenku_web.preflight:main"
 qian-wenku-mcp = "qian_wenku_mcp.server:main"
+qian-wenku-mcp-config = "qian_wenku_mcp.config:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
