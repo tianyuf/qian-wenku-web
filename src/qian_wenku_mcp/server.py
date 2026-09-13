@@ -87,7 +87,10 @@ mcp = FastMCP(
 )
 
 _base_url = os.environ.get("WENKU_BASE_URL", DEFAULT_BASE_URL)
-_passphrase = os.environ.get("WENKU_BETA_PASSPHRASE", "")
+_passphrase = (
+    os.environ.get("WENKU_BETA_PASSPHRASE")
+    or os.environ.get("WENKU_MCP_TOKEN", "")
+)
 _client = WenkuClient(_base_url, _passphrase)
 
 
