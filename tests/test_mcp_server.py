@@ -2,9 +2,15 @@
 
 Covers only local wiring — tool registration, auth-handling shape.
 End-to-end behavior against a live server is exercised manually.
+
+These tests are skipped automatically when the optional ``mcp``
+extra (fastmcp) is not installed, so the base `pip install -e '.[dev]'`
+CI job can run without it.
 """
 
 import pytest
+
+fastmcp = pytest.importorskip("fastmcp", reason="mcp extra not installed")
 
 from fastmcp import Client
 
