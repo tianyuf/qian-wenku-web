@@ -1,9 +1,15 @@
 """MCP server exposing the Qian Xuesen corpus as agent tools.
 
-Runs over stdio; each researcher runs it locally with their own
-passphrase. The server is a thin JSON client of the public web
-app's API — auth is whatever the web app enforces (beta passphrase
-cookie session).
+Two modes:
+
+* **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with a
+  `WENKU_BETA_PASSPHRASE` env var; the server does the beta login and
+  returns results over stdio.
+
+* **hosted HTTP** (`python -m qian_wenku_mcp.server`) — runs on the
+  deployment host as a sibling service to the web app, exposes the MCP
+  endpoint at /mcp with bearer-token auth, and is meant to be fronted by
+  nginx.
 """
 
 from __future__ import annotations
@@ -168,13 +174,61 @@ def list_sources() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry points
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
+    """Run the MCP server over stdio (per-user install)."""
     mcp.run()
 
 
+def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
+    """Run the MCP server over HTTP behind the deployment's nginx.
+
+    Expects the bearer-token value from ``WENKU_MCP_TOKEN`` (a shared
+    secret — typically the same value as the web app's BETA_PASSPHRASE).
+    Requests are rejected client-side by middleware before reaching the
+    MCP stack, so any invalid token gets a plain 401.
+    """
+    import hmac as _hmac
+
+    from starlette.applications import Starlette
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+    import uvicorn
+
+    token = os.environ.get("WENKU_MCP_TOKEN", "")
+    if not token:
+        raise RuntimeError("WENKU_MCP_TOKEN is required for the hosted MCP server")
+
+    class BearerAuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):  # type: ignore[override]
+            auth = request.headers.get("authorization", "")
+            scheme, _, value = auth.partition(" ")
+            if scheme.lower() != "bearer" or not _hmac.compare_digest(value, token):
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return await call_next(request)
+
+    asgi_app = mcp.http_app(path="/mcp/rpc")
+    app = Starlette(lifespan=asgi_app.lifespan)
+    app.add_middleware(BearerAuthMiddleware)
+    app.mount("/", asgi_app)
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--http", action="store_true",
+                        help="Serve over HTTP with bearer-token auth (hosted mode)")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8100)
+    args = parser.parse_args()
+
+    if args.http:
+        serve_http(host=args.host, port=args.port)
+    else:
+        main()

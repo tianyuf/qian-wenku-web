@@ -108,30 +108,23 @@ Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepar
 
 ### MCP server (for AI agents)
 
-A stdio MCP server (`qian-wenku-mcp`) wraps the JSON API so that agents like Claude can search and browse the corpus directly. Install extra deps and run:
-
-```bash
-pip install -e '.[mcp]'
-WENKU_BETA_PASSPHRASE=... qian-wenku-mcp
-```
-
-Or add it to an MCP client config (e.g. Claude Desktop):
+A hosted MCP endpoint is exposed at `https://wenku.qianxuesen.org/mcp/rpc` for AI clients (Claude Desktop, etc.). The bearer token is the same beta passphrase as the website — request access at <mail@qianxuesen.org>.
 
 ```json
 {
   "mcpServers": {
     "qian-wenku": {
-      "command": "qian-wenku-mcp",
-      "env": {
-        "WENKU_BASE_URL": "https://wenku.qianxuesen.org",
-        "WENKU_BETA_PASSPHRASE": "your-passphrase"
-      }
+      "type": "http",
+      "url": "https://wenku.qianxuesen.org/mcp/rpc",
+      "headers": { "Authorization": "Bearer your-token" }
     }
   }
 }
 ```
 
 Tools exposed: `search` (substring + filters), `get_entry` (full transcript + navigation), `list_sources` (volumes with entry counts and year ranges).
+
+For local development (stdio mode, against the fixture or a dev server), install the `mcp` extra and run `qian-wenku-mcp` directly — see the [help page](https://wenku.qianxuesen.org/mcp) on the live site.
 
 ## 🔐 Security
 

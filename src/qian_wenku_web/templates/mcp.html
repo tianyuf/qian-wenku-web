@@ -22,8 +22,12 @@
             <h5 class="card-title">什么是 MCP？</h5>
             <p class="card-text text-muted">
                 MCP（Model Context Protocol）是让 AI 助手（如 Claude）直接访问外部资料的标准协议。
-                本站提供一个 MCP 服务器，让 AI 助手可以检索文库条目、阅读全文、按年份和来源浏览——
+                本站托管了一个 MCP 服务，让 AI 助手可以直接检索文库条目、阅读全文、按年份和来源浏览——
                 相当于把整个文库的检索能力接入 AI 对话。
+            </p>
+            <p class="card-text text-muted mb-0">
+                您<strong>无需在自己电脑上安装任何软件</strong>，只要支持 MCP 的 AI 客户端
+                （如 Claude Desktop），把本站的服务地址和访问口令填进去即可。
             </p>
         </div>
     </div>
@@ -43,15 +47,13 @@
         <div class="card-body">
             <h5 class="card-title">接入方式</h5>
             <p class="card-text text-muted">
-                MCP 服务器是一个独立的小程序，在您的电脑上运行，
-                通过 HTTPS 访问 <code>wenku.qianxuesen.org</code> 的 JSON API。
-                认证使用本站相同的访问口令（请向编者索取）。
+                MCP 服务的地址与令牌（bearer token）如下所示。
+                访问口令就是本站账号口令，请向 <a href="mailto:mail@qianxuesen.org">mail@qianxuesen.org</a> 索取。
             </p>
-            <p class="card-text text-muted">
-                使用前请先安装 Python 3.10+ 与本仓库代码，然后：
-            </p>
-            <pre class="bg-light p-3 rounded"><code>pip install -e '.[mcp]'
-WENKU_BETA_PASSPHRASE=您的口令 qian-wenku-mcp</code></pre>
+            <ul class="text-muted mb-0">
+                <li><strong>服务地址</strong>（MCP endpoint URL）: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
+                <li><strong>请求头</strong>： <code>Authorization: Bearer 您的口令</code></li>
+            </ul>
         </div>
     </div>
 
@@ -59,21 +61,22 @@ WENKU_BETA_PASSPHRASE=您的口令 qian-wenku-mcp</code></pre>
         <div class="card-body">
             <h5 class="card-title">在 Claude Desktop 中使用</h5>
             <p class="card-text text-muted">
-                在 Claude Desktop 的配置文件 <code>claude_desktop_config.json</code> 中添加：
+                打开 Claude Desktop 的配置文件 <code>claude_desktop_config.json</code>，加入：
             </p>
             <pre class="bg-light p-3 rounded"><code>{
   "mcpServers": {
     "qian-wenku": {
-      "command": "qian-wenku-mcp",
-      "env": {
-        "WENKU_BETA_PASSPHRASE": "您的口令"
+      "type": "http",
+      "url": "https://wenku.qianxuesen.org/mcp/rpc",
+      "headers": {
+        "Authorization": "Bearer 您的口令"
       }
     }
   }
 }</code></pre>
-            <p class="card-text text-muted">
-                保存后重启 Claude Desktop，在对话中即可让 Claude 直接检索文库。
-                例如："帮我找出钱学森在 1956 年写给郭永怀的所有信件"。
+            <p class="card-text text-muted mb-0">
+                保存并重启 Claude Desktop 后，可以直接对 Claude 说：
+                "帮我找出钱学森在 1956 年写给郭永怀的所有信件。"
             </p>
         </div>
     </div>
@@ -85,7 +88,7 @@ WENKU_BETA_PASSPHRASE=您的口令 qian-wenku-mcp</code></pre>
                 适合：让 AI 帮您跨年份、跨来源做主题性检索与综述，快速定位某段历史的全部相关条目。
             </p>
             <p class="card-text text-muted mb-0">
-                请注意：MCP 不会绕过本站现有的访问控制；访问口令与网页端共用。
+                请注意：MCP 与网页端共用同一个访问口令，不会绕过现有访问控制。
                 AI 助手的输出可能包含错误或对原文的转述偏差，引用前请回到条目页核对扫描页原文。
             </p>
         </div>
@@ -95,8 +98,8 @@ WENKU_BETA_PASSPHRASE=您的口令 qian-wenku-mcp</code></pre>
         <div class="card-body">
             <h5 class="card-title">源代码与文档</h5>
             <p class="card-text text-muted mb-0">
-                MCP 服务器的代码与说明托管在
-                <a href="https://github.com/tianyuf/qian-wenku-web">tianyuf/qian-wenku-web</a>。
+                MCP 服务的代码托管在
+                <a href="https://github.com/tianyuf/qian-wenku-web">tianyuf/qian-wenku-web</a>（MIT 许可证，代码部分）。
                 有疑问请联系 <a href="mailto:mail@qianxuesen.org">mail@qianxuesen.org</a>。
             </p>
         </div>
