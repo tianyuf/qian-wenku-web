@@ -30,7 +30,7 @@ For access to the corpus or the site, contact <mail@qianxuesen.org>.
 
 ## ⚖️ Licensing
 
-The **code** in this repository is MIT-licensed. The **corpus data** (texts, scans, and databases) is prepared by a separate private pipeline, is separately licensed, and is not stored here.
+The **code** in this repository is MIT-licensed. The **corpus data** (texts, scans, and databases) is prepared by the separate private [`qian-wenku-ingest`](https://github.com/tianyuf/qian-wenku-ingest) pipeline, is separately licensed, and is not stored here.
 
 ---
 
