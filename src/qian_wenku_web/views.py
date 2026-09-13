@@ -1303,3 +1303,9 @@ def about():
         stats['wenji_count'] = db.conn.execute("SELECT COUNT(*) FROM entries WHERE content_type='wenji'").fetchone()[0]
         stats['shuxin_count'] = db.conn.execute("SELECT COUNT(*) FROM entries WHERE content_type='shuxin'").fetchone()[0]
     return render_template('about.html', stats=stats)
+
+
+@views_bp.route('/mcp')
+def mcp_guide():
+    """MCP (Model Context Protocol) usage guide."""
+    return render_template('mcp.html')
