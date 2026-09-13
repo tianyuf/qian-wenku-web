@@ -1,85 +1,113 @@
+<div align="center">
+
 # qian-wenku-web
 
-Standalone, read-only Flask application for searching and browsing prepared Qian Xuesen corpus artifacts. The interface includes nianpu, wenji, shuxin, recipient, entity, date, duplicate, citation, and page-image views without an asset build step.
+**钱学森文库 · The Qian Xuesen Digital Archive**
 
-## Data boundary
+A read-only web application for exploring archival materials pertaining to the Chinese-born scientist Qian Xuesen 钱学森 (Hsue-shen Tsien, 1911–2009). The `qian-wenku-web` application supports three entry formats: chronicles (_nianpu_), essays in collected works (_wenji_), and correspondences (_shuxin_). 
 
-This repository contains application code and a tiny synthetic test fixture only. Production corpus databases, OCR text, PDFs, and page images are not included and are separately licensed. The MIT license in this repository applies to the code, not to corpus data or source documents.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 
-The web process accepts one prepared artifact directory containing exactly this contract:
+[🌐 Live site](https://wenku.qianxuesen.org/) ·
+[📬 Request access](mailto:mail@qianxuesen.org)
 
-```text
-artifacts/
-├── corpus.db
-├── manifest.json
-└── page_images.json
-```
+</div>
 
-`manifest.json` uses schema version `1` and contains:
+![Entry view](docs/screenshot.png)
 
-```json
-{
-  "schema_version": 1,
-  "generated_at": "2026-01-01T00:00:00Z",
-  "counts": {
-    "sources": 4,
-    "entries": 5,
-    "recipients": 2,
-    "entities": 2,
-    "page_images": 7
-  },
-  "files": {
-    "corpus.db": {
-      "sha256": "SHA-256 hex digest",
-      "bytes": 12345
-    },
-    "page_images.json": {
-      "sha256": "SHA-256 hex digest",
-      "bytes": 678
-    }
-  }
-}
-```
+## ✨ Features
 
-`page_images.json` maps source IDs and positive page numbers to 10-character lowercase hexadecimal page-image IDs generated from truncated SHA-256 digests. The database must identify schema version `1` through both `PRAGMA user_version` and `schema_info`, contain the tables and columns checked by `qian_wenku_web.artifacts`, have non-empty sources and entries, and provide a populated permalink for every entry. The app opens SQLite with URI `mode=ro` and `PRAGMA query_only=ON`; it has no import, migration, schema creation, or ingestion code.
+- 🔍 **Full-text search** across the entire corpus
+- 📖 **Side-by-side reading** — digital transcript next to the scanned original page
+- 🗂️ **Structured browsing** by source, year, recipient, and people/organizations
+- 🔒 **Strictly read-only** — the corpus cannot be modified through the app
+- 🚀 **Simple to run** — one Flask app, one SQLite file, no build step
 
-Validate an artifact before starting the service:
+## 📬 Access
 
-```bash
-qian-wenku-preflight --artifact-dir /opt/qian-wenku-web/artifacts
-```
+For access to the corpus or the site, contact <mail@qianxuesen.org>.
 
-## Development
+## ⚖️ Licensing
+
+The **code** in this repository is MIT-licensed. The **corpus data** (texts, scans, and databases) is prepared by a separate private pipeline, is separately licensed, and is not stored here.
+
+---
+
+## 🛠️ Developers
+
+Technical documentation for working on the codebase.
+
+### Architecture
+
+The app is Flask + SQLite, server-rendered, with HTMX for in-place search results. There is no JavaScript or CSS build step. It is strictly read-only: the database is opened with `mode=ro` and `PRAGMA query_only=ON`, and the codebase contains no import, migration, schema-creation, or ingestion code.
+
+### Setup
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[dev]'
 pytest
-python tests/create_fixture.py artifacts
+python tests/create_fixture.py artifacts    # tiny synthetic corpus for local use
 flask --app qian_wenku_web.wsgi run
 ```
 
-Configuration is through `WENKU_ARTIFACT_DIR`, `R2_CDN_BASE`, and `R2_PREFIX`; see `.env.example`. Environment files are not loaded by the package itself.
+### Data format
 
-For a private beta, set `BETA_PASSPHRASE`, a long random `SECRET_KEY`, and `SESSION_COOKIE_SECURE=true` in the deployment environment. The passphrase is never stored in this repository. When `BETA_PASSPHRASE` is empty, login protection is disabled.
+The web process consumes a single prepared "artifact directory" containing exactly:
 
-## Production
+```text
+artifacts/
+├── corpus.db          # corpus database, schema version 1
+├── manifest.json      # record counts + sha256 checksums
+└── page_images.json   # page → 10-char hex image ID (served from CDN)
+```
 
-The checked-in examples deploy at the root domain `https://wenku.qianxuesen.org/`:
+- `corpus.db` — schema version `1` (via both `PRAGMA user_version` and the `schema_info` table), non-empty `sources` and `entries`, and a populated permalink for every entry. Full details: `qian_wenku_web.artifacts`.
+- `manifest.json` — schema version `1` with generated-at timestamp, record counts, and sha256/byte-size checksums for the other two files.
+- `page_images.json` — maps source IDs and page numbers to 10-character lowercase hex page-image IDs generated from truncated SHA-256 digests. Images themselves live on the CDN configured by `R2_CDN_BASE` / `R2_PREFIX`.
 
-- `deploy/systemd/qian-wenku-web.service`
-- `deploy/nginx/wenku.qianxuesen.org.conf`
-- `deploy/nginx/www.qianxuesen.org.conf`
-- `deploy/www/` static landing page for `https://www.qianxuesen.org/`
+Validate an artifact before starting the service:
 
-Install the package and virtual environment under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.
+```bash
+qian-wenku-preflight --artifact-dir /path/to/artifacts
+```
 
-## Routes
+### Configuration
 
-- `/` and `/search/results`: search UI and HTMX results
-- `/browse`, `/browse/year/<year>`, `/date/`: corpus browsing
-- `/e/<permalink>`: canonical entry page
-- `/browse/recipients`, `/browse/entities`: relationship directories
-- `/api/search/`, `/api/browse/`, `/api/meta/`, `/api/pdf/`: JSON APIs
-- `/health`: lightweight process and database health check
+All configuration is via environment variables (not loaded from `.env` files by the package itself); see `.env.example`:
+
+| Variable | Purpose |
+|---|---|
+| `WENKU_ARTIFACT_DIR` | Path to the artifact directory |
+| `R2_CDN_BASE` / `R2_PREFIX` | Where page scans are served from |
+| `BETA_PASSPHRASE` | If set, visitors must enter this passphrase (private beta mode); if empty, login protection is disabled |
+| `SECRET_KEY` / `SESSION_COOKIE_SECURE` | Required when beta mode is on |
+
+### Routes
+
+| Route | Purpose |
+|---|---|
+| `/`, `/search/results` | Search UI and HTMX results |
+| `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
+| `/e/<permalink>` | Canonical entry page |
+| `/browse/recipients`, `/browse/entities` | Relationship directories |
+| `/api/search/`, `/api/browse/`, `/api/meta/`, `/api/pdf/` | JSON APIs |
+| `/health` | Lightweight process and database health check |
+
+### Deployment
+
+Checked-in examples for the production deployment at `https://wenku.qianxuesen.org/`:
+
+- `deploy/systemd/qian-wenku-web.service` — gunicorn service
+- `deploy/nginx/wenku.qianxuesen.org.conf` — site config
+- `deploy/www/` — static landing page for `https://www.qianxuesen.org/`
+
+Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.
+
+## 🔐 Security
+
+Please report security vulnerabilities privately to the repository maintainers rather than opening a public issue. Do not include production corpus data, credentials, private paths, or personal information in a report.
+
+The application is designed for read-only prepared artifacts. A deployment should run the preflight check, keep the artifact and application tree non-writable by the service, terminate TLS at nginx, and avoid exposing Gunicorn directly. Data licensing and content corrections are outside the code security policy.
