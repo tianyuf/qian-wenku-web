@@ -20,6 +20,7 @@ def format_entry(row):
         "id": row["id"],
         "entry_order": row["entry_order"],
         "content_type": content_type,
+        "permalink": row.get("permalink"),
         "date_iso": row["date_iso"],
         "date_display": format_date_chinese(row["date_iso"], row["date_precision"]),
         "date_precision": row["date_precision"],

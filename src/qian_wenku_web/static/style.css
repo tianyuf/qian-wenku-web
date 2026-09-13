@@ -377,7 +377,7 @@ body {
     padding: 0.75rem 0.95rem 0.85rem;
     color: var(--reading-text);
     line-height: 1.85;
-    font-family: "Helvetica Neue", Helvetica, Arial, "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    font-family: Georgia, "Times New Roman", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
     font-size: 0.92rem;
 }
 
@@ -501,7 +501,7 @@ mark.highlight {
     max-width: 880px;
     font-size: 1.02rem;
     line-height: 2.05;
-    font-family: "Helvetica Neue", Helvetica, Arial, "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    font-family: Georgia, "Times New Roman", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 }
 
 .entry-full-content p {

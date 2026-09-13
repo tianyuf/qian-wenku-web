@@ -224,6 +224,7 @@ def entry_detail(entry_id):
                 "id": entry["id"],
                 "entry_order": entry["entry_order"],
                 "content_type": entry.get("content_type", "nianpu") or "nianpu",
+                "permalink": entry.get("permalink"),
                 "title": entry.get("title"),
                 "date_iso": entry["date_iso"],
                 "date_display": format_date_chinese(entry["date_iso"], entry["date_precision"]),

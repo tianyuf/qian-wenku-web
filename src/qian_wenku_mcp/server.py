@@ -75,15 +75,39 @@ class WenkuClient:
 # FastMCP server
 # ---------------------------------------------------------------------------
 
+_SERVER_INSTRUCTIONS = """\
+Access to the Qian Xuesen (钱学森) corpus — nianpu (chronology), wenji
+(collected works), and shuxin (letters). Use `search` to find entries by
+text, `get_entry` for the full transcript of one entry, and `list_sources`
+to see the available volumes.
+
+## Citation rules (important)
+
+Every entry returned by `search` and `get_entry` carries a stable
+`permalink_url` (e.g. `https://wenku.qianxuesen.org/e/886987536f`) plus a
+ready-made `citation` string. When you use information from the corpus in
+your reply:
+
+1. **Always cite the source entry.** Mention its date/title and include
+   the permalink URL so the user can verify the original.
+2. **Quote verbatim when quoting.** Copy the Chinese text exactly; do not
+   paraphrase inside quotation marks.
+3. **Distinguish corpus content from your own reasoning.** If you
+   summarize, label clearly; do not silently merge multiple entries into
+   one.
+4. **When in doubt, follow up with `get_entry`.** Search results carry a
+   truncated `content_preview`; the full text plus citation lives on the
+   entry's canonical page.
+
+Style suggestion for citations:
+
+    「<direct quote>」 — 钱学森, *<source title>*, <date_display>
+    <permalink_url>
+"""
+
 mcp = FastMCP(
     "qian-wenku",
-    instructions=(
-        "Access to the Qian Xuesen (钱学森) corpus — nianpu (chronology), "
-        "wenji (collected works), and shuxin (letters). Use search to find "
-        "entries by text, use get_entry for the full transcript of one entry, "
-        "and list_sources to see the available volumes. For access, contact "
-        "mail@qianxuesen.org."
-    ),
+    instructions=_SERVER_INSTRUCTIONS,
 )
 
 _base_url = os.environ.get("WENKU_BASE_URL", DEFAULT_BASE_URL)
@@ -92,6 +116,69 @@ _passphrase = (
     or os.environ.get("WENKU_MCP_TOKEN", "")
 )
 _client = WenkuClient(_base_url, _passphrase)
+
+
+def _permalink_url(permalink: str | None) -> str | None:
+    """Absolute URL for an entry permalink, or None if missing."""
+    if not permalink:
+        return None
+    return f"{_base_url}/e/{permalink}"
+
+
+def _format_citation(entry: dict[str, Any]) -> str:
+    """Build a compact, cite-ready string for one entry.
+
+    Format:  钱学森,《我们要看到21世纪》,《钱学森文集（第6卷）》, 1989年1月. URL
+    Falls back gracefully on missing fields.
+    """
+    parts: list[str] = []
+    title = entry.get("title")
+    source_title = (entry.get("source") or {}).get("title")
+    date_display = entry.get("date_display") or entry.get("date_iso")
+
+    if title:
+        parts.append(f"《{title}》")
+    if source_title:
+        if title:
+            parts.append(f"载《{source_title}》")
+        else:
+            parts.append(f"《{source_title}》")
+    if date_display:
+        parts.append(str(date_display))
+
+    url = _permalink_url(entry.get("permalink"))
+    body = ", ".join(parts) if parts else "钱学森文库条目"
+    return f"{body}. {url}" if url else body + "."
+
+
+def _enrich_entry(entry: dict[str, Any]) -> None:
+    """Attach permalink_url + citation to an entry dict in-place."""
+    entry["permalink_url"] = _permalink_url(entry.get("permalink"))
+    entry["citation"] = _format_citation(entry)
+
+
+def _enrich_search_results(payload: dict[str, Any]) -> dict[str, Any]:
+    for entry in payload.get("results") or []:
+        _enrich_entry(entry)
+    return payload
+
+
+def _enrich_entry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    entry = payload.get("entry")
+    if isinstance(entry, dict):
+        _enrich_entry(entry)
+    return payload
+
+
+@mcp.prompt(name="citation-rules")
+def citation_rules_prompt() -> str:
+    """Instructions on how to cite entries from the Qian Wenku corpus.
+
+    Attach this to your system prompt or pass it whenever the
+    "qian-wenku" server is in play, so the agent always links back to
+    sources with permalinks.
+    """
+    return _SERVER_INSTRUCTIONS
 
 
 @mcp.tool
@@ -127,7 +214,9 @@ def search(
         Each result has: id, date_iso, date_display, date_precision,
         content_preview (300 chars), content_full, pages {start, end,
         pdf_start, pdf_end}, source {id, title, volume, content_type},
-        plus title/source_attribution/footnotes for wenji entries.
+        permalink, permalink_url (absolute URL for citation),
+        citation (formatted), plus title/source_attribution/footnotes
+        for wenji entries.
     """
     params: dict[str, Any] = {"q": q, "limit": limit, "offset": offset}
     if person:
@@ -140,7 +229,7 @@ def search(
         params["content_type"] = content_type
     if source_id is not None:
         params["source_id"] = source_id
-    return _client.get("/api/search/", params=params)
+    return _enrich_search_results(_client.get("/api/search/", params=params))
 
 
 @mcp.tool
@@ -154,10 +243,10 @@ def get_entry(entry_id: int) -> dict[str, Any]:
         entry_id: Integer id of the entry (from search results).
 
     Returns:
-        Dict with keys: entry (full content, date, pages, source),
-        navigation {prev, next, same_day}.
+        Dict with keys: entry (full content, date, pages, source,
+        permalink_url, citation), navigation {prev, next, same_day}.
     """
-    return _client.get(f"/api/browse/entry/{entry_id}")
+    return _enrich_entry_payload(_client.get(f"/api/browse/entry/{entry_id}"))
 
 
 @mcp.tool
