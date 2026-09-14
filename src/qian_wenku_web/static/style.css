@@ -1041,16 +1041,6 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
 .otd-preview:visited { color: var(--text); }
 .otd-preview:hover { color: var(--accent); }
 /* Beta login */
-.beta-badge {
-    padding: 0.2rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--muted);
-    background: var(--surface-muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-}
-
 .login-view {
     flex: 1;
     overflow-y: auto;

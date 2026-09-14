@@ -5,12 +5,11 @@
 {% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
 {% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
 {% block header_logo %}<a href="{{ url_for('request_access') }}" class="logo">钱学森文库</a>{% endblock %}
-{% block header_nav %}<span class="beta-badge">受限访问</span>{% endblock %}
+{% block header_nav %}{% endblock %}
 
 {% block content %}
 <main class="login-view" id="main">
     <section class="login-panel" aria-labelledby="request-title">
-        <span class="section-kicker">研究访问</span>
         <h1 id="request-title">申请访问</h1>
         {% if unavailable %}
         <div class="login-error" role="alert">访问申请暂时不可用。</div>

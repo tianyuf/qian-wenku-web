@@ -5,12 +5,11 @@
 {% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
 {% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
 {% block header_logo %}<a href="{{ url_for('login') }}" class="logo">钱学森文库</a>{% endblock %}
-{% block header_nav %}<span class="beta-badge">内测阶段</span>{% endblock %}
+{% block header_nav %}{% endblock %}
 
 {% block content %}
 <main class="login-view" id="main">
     <section class="login-panel" aria-labelledby="login-title">
-        <span class="section-kicker">内测阶段</span>
         <h1 id="login-title">访问文库</h1>
         <p class="login-description">输入您的个人访问码以继续。</p>
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
