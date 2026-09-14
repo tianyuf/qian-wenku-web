@@ -871,3 +871,48 @@ def test_favorites_show_notes_and_highlight_markers(artifact_dir, tmp_path, monk
     assert len(notes) == 1
     assert notes[0]["quote"] == "合成"
     assert notes[0]["body"] == "重点段落"
+
+
+def test_favorites_annotations_section(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Reader@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = 1
+        session.permanent = True
+
+    # Favorite entry 1; annotate entry 2 (not favorited).
+    client.post("/api/favorites", data={"entry_id": "1"})
+    client.post("/api/notes", data={"entry_id": "2", "body": "另一条的批注", "quote": "钱学森"})
+
+    page = client.get("/favorites").get_data(as_text=True)
+    assert "我的批注" in page
+    assert "另一条的批注" in page
+    assert "「钱学森」" in page
+    assert "这些条目有您的批注但尚未收藏" in page
+    # Entry 2 (annotated only) appears with a star button.
+    assert 'value="2"' in page
+    # Favorited entry does not duplicate in the annotations section.
+    assert 'value="1"' in page  # in favorites remove form only

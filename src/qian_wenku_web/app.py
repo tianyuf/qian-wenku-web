@@ -436,10 +436,63 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
             return redirect(url_for("views.index"))
         favorites = _load_favorites(app, grant_id)
+        annotations = _load_annotations(app, grant_id)
         return render_template(
             'favorites.html',
             favorites=favorites,
+            annotations=annotations,
         )
+
+    def _load_annotations(app, grant_id):
+        """All of an account's notes with entry metadata, newest first.
+
+        Entries that are favorited appear in the favorites list above, so
+        only entries without a favorite are listed here.
+        """
+        favorited_ids = {
+            fav["entry_id"]
+            for fav in list_favorites(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        }
+        from datetime import datetime, timezone
+        annotations = []
+        with NianpuDatabase(app.config['DATABASE_PATH']) as note_db:
+            for note in list_entry_notes_all(
+                app.config['ACCESS_DATABASE_PATH'], grant_id
+            ):
+                entry_id = note["entry_id"]
+                if entry_id in favorited_ids:
+                    continue
+                try:
+                    row = note_db.conn.execute(
+                        """
+                        SELECT e.permalink, e.title, e.date_iso, e.date_precision,
+                               e.content_type, e.start_page,
+                               s.title AS source_title
+                        FROM entries e
+                        JOIN sources s ON e.source_id = s.id
+                        WHERE e.id = ?
+                        """,
+                        (entry_id,),
+                    ).fetchone()
+                except Exception:
+                    app.logger.exception("Annotation entry lookup failed")
+                    row = None
+                if row is None:
+                    continue
+                note["created_display"] = datetime.fromtimestamp(
+                    int(note["created_at"]), timezone.utc
+                ).strftime("%Y-%m-%d %H:%M")
+                annotations.append({
+                    "entry_id": entry_id,
+                    "permalink": row["permalink"],
+                    "title": row["title"]
+                        or format_date_chinese(row["date_iso"], row["date_precision"]),
+                    "date_display": format_date_chinese(row["date_iso"], row["date_precision"]),
+                    "source_title": row["source_title"],
+                    "start_page": row["start_page"],
+                    "note": note,
+                })
+        return annotations
 
     def _load_favorites(app, grant_id):
         """Entry metadata + notes for an account's favorites, newest first."""

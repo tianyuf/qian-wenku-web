@@ -39,23 +39,51 @@
         <p class="login-description">暂无收藏。在条目页面点击“☆ 收藏”即可添加，收藏会保存在您的账户下。</p>
         <a class="btn btn-primary" href="{{ url_for('views.index') }}">去搜索</a>
         {% endif %}
+
+        {% if annotations %}
+        <section class="account-section favorites-annotations" aria-labelledby="annotations-title">
+            <h2 id="annotations-title">我的批注</h2>
+            <p class="text-muted small mb-2">这些条目有您的批注但尚未收藏。</p>
+            <div class="favorites-list">
+                {% for item in annotations %}
+                <div class="favorite-row">
+                    <div>
+                        <a href="{{ url_for('views.entry_permalink', permalink=item.permalink) }}">{{ item.title }}</a>
+                        <span>{{ item.source_title }} · {{ item.date_display }} · 第 {{ item.start_page }} 页 · 批注于 {{ item.note.created_display }}</span>
+                        <div class="favorite-notes">
+                            {% if item.note.quote %}<blockquote class="entry-note-quote">「{{ item.note.quote }}」</blockquote>{% endif %}
+                            <div class="entry-note-body">{{ item.note.body }}</div>
+                        </div>
+                    </div>
+                    <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-add-form">
+                        <input type="hidden" name="entry_id" value="{{ item.entry_id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">☆ 收藏</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
     </section>
 </main>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.querySelectorAll('.favorite-remove-form').forEach(function(form) {
+function favoriteToggle(form) {
+    var body = new URLSearchParams(new FormData(form));
+    fetch('/api/favorites', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+    }).then(function() {
+        window.location.reload();
+    });
+}
+document.querySelectorAll('.favorite-remove-form, .favorite-add-form').forEach(function(form) {
     form.addEventListener('submit', function(e) {
         e.preventDefault();
-        var body = new URLSearchParams(new FormData(form));
-        fetch('/api/favorites', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: body.toString()
-        }).then(function() {
-            window.location.reload();
-        });
+        favoriteToggle(form);
     });
 });
 </script>
