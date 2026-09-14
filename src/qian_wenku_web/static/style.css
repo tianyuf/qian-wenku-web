@@ -710,6 +710,12 @@ mark.highlight {
         overflow: visible;
     }
 
+    /* Single-panel pages (login, about, mcp, 404…) must span the full
+       grid instead of being squeezed into the 280px column. */
+    .app-main > :only-child {
+        grid-column: 1 / -1;
+    }
+
     .sidebar-left,
     .content-center,
     .sidebar-right {
