@@ -394,7 +394,7 @@ def request_email_change(
 def consume_email_change(path: str, secret: str, token: str) -> str | None:
     """Consume an email-change link and apply the pending email."""
     if not token.startswith("qml_") or len(token) > 128:
-        raise ValueError("invalid")
+        return None
     now = int(time.time())
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
