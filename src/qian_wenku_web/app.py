@@ -126,7 +126,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     def require_beta_login():
         if not auth_enabled:
             return None
-        if request.endpoint in {"login", "request_access", "static", "health_check"}:
+        if request.endpoint in {"login", "static", "health_check"}:
             return None
         # Public AI install doc: no auth required so chat harnesses can fetch it.
         if request.path == "/mcp/install.md":
@@ -221,6 +221,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                             app.config['ACCESS_CODE_SECRET'],
                             email,
                             next_url,
+                            terms_version=app.config['ACCESS_TERMS_VERSION'],
+                            create_account=True,
                             hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
                         )
                     except AccessRequestLimitError:
@@ -251,97 +253,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             csrf_token=csrf_token,
             magic_login_enabled=magic_login_enabled,
             operator_login_enabled=bool(app.config['BETA_PASSPHRASE']),
-            turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
-        )
-
-    @app.route('/request-access', methods=['GET', 'POST'])
-    def request_access():
-        requests_enabled = bool(
-            app.config['ACCESS_DATABASE_PATH']
-            and app.config['RESEND_API_KEY']
-            and app.config['ACCESS_FROM_EMAIL']
-            and app.config['TURNSTILE_SITE_KEY']
-            and app.config['TURNSTILE_SECRET_KEY']
-            and app.config['TURNSTILE_HOSTNAMES']
-        )
-        if not requests_enabled:
-            return render_template('request_access.html', unavailable=True), 503
-
-        csrf_token = session.get("access_request_csrf")
-        if not csrf_token:
-            csrf_token = secrets.token_urlsafe(24)
-            session["access_request_csrf"] = csrf_token
-
-        error = None
-        submitted = False
-        if request.method == 'POST':
-            supplied_csrf = request.form.get("csrf_token", "")
-            if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
-                error = "请刷新页面后重试。"
-            elif request.form.get("website"):
-                submitted = True
-            elif not verify_turnstile(
-                app.config['TURNSTILE_SECRET_KEY'],
-                request.form.get("cf-turnstile-response", ""),
-                request.headers.get("CF-Connecting-IP", request.remote_addr),
-                "request_access",
-                app.config['TURNSTILE_HOSTNAMES'],
-            ):
-                error = "请完成人机验证后重试。"
-            elif not request.form.get("accept_terms"):
-                error = "请先勾选同意文库使用条款。"
-            else:
-                email = normalize_email(request.form.get("email", ""))
-                if not email:
-                    error = "请输入有效的邮箱地址。"
-                else:
-                    try:
-                        link = issue_magic_link(
-                            app.config['ACCESS_DATABASE_PATH'],
-                            app.config['ACCESS_CODE_SECRET'],
-                            email,
-                            url_for("views.index"),
-                            terms_version=app.config['ACCESS_TERMS_VERSION'],
-                            create_account=True,
-                            hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
-                        )
-                    except AccessRequestLimitError:
-                        return render_template(
-                            'request_access.html',
-                            csrf_token=csrf_token,
-                            error="访问申请较多，请稍后再试。",
-                            submitted=False,
-                            unavailable=False,
-                        ), 429
-                    if link is not None:
-                        link_id, login_token = link
-                        try:
-                            send_magic_link(
-                                app.config['RESEND_API_KEY'],
-                                app.config['ACCESS_FROM_EMAIL'],
-                                email,
-                                login_token,
-                                link_id,
-                                app.config['PUBLIC_BASE_URL'],
-                            )
-                        except EmailDeliveryError:
-                            delete_magic_link(
-                                app.config['ACCESS_DATABASE_PATH'], link_id
-                            )
-                            app.logger.exception("Magic-link delivery failed")
-                            error = (
-                                "Delivery could not be confirmed. Check your email before "
-                                "trying again."
-                            )
-                    if error is None:
-                        submitted = True
-
-        return render_template(
-            'request_access.html',
-            csrf_token=csrf_token,
-            error=error,
-            submitted=submitted,
-            unavailable=False,
             turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
         )
 
@@ -445,13 +356,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
             "magic_login_enabled": magic_login_enabled,
-            "access_requests_enabled": bool(
-                app.config['ACCESS_DATABASE_PATH']
-                and app.config['RESEND_API_KEY']
-                and app.config['TURNSTILE_SITE_KEY']
-                and app.config['TURNSTILE_SECRET_KEY']
-                and app.config['TURNSTILE_HOSTNAMES']
-            ),
         }
 
     @app.route('/health')

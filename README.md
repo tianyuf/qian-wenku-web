@@ -10,7 +10,7 @@ A read-only web application for exploring archival materials pertaining to the C
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 
 [🌐 Live site](https://wenku.qianxuesen.org/) ·
-[📬 Request access](https://wenku.qianxuesen.org/request-access)
+[🔑 Sign in](https://wenku.qianxuesen.org/login)
 
 </div>
 
@@ -26,7 +26,7 @@ A read-only web application for exploring archival materials pertaining to the C
 
 ## 📬 Access
 
-Request access at <https://wenku.qianxuesen.org/request-access>, then sign in with a single-use email link.
+Sign in with a single-use email link at <https://wenku.qianxuesen.org/login>; any valid email can self-register.
 
 ## ⚖️ Licensing
 
@@ -98,7 +98,7 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | Route | Purpose |
 |---|---|
 | `/`, `/search/results` | Search UI and HTMX results |
-| `/login`, `/request-access` | Email magic-link login and access requests |
+| `/login`, `/account` | Email magic-link login (open registration) and account management |
 | `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
 | `/e/<permalink>` | Canonical entry page |
 | `/browse/recipients`, `/browse/entities` | Relationship directories |

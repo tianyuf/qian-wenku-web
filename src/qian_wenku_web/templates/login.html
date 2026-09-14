@@ -12,7 +12,7 @@
     <section class="login-panel" aria-labelledby="login-title">
         <h1 id="login-title">访问文库</h1>
         {% if submitted %}
-        <p class="login-description access-success">如果该邮箱已获准访问，我们已发送一封登录邮件。链接仅可使用一次，并将在 15 分钟后失效。</p>
+        <p class="login-description access-success">登录链接已发送至您的邮箱。链接仅可使用一次，并将在 15 分钟后失效。</p>
         <a class="btn btn-primary w-100" href="{{ url_for('login', next=next_url) }}">重新发送</a>
         {% elif magic_login_enabled %}
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
@@ -40,7 +40,6 @@
                 </div>
                 <div class="cf-turnstile access-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="login"></div>
                 <button type="submit" class="btn btn-primary">发送登录链接</button>
-                {% if access_requests_enabled %}<p class="login-access">尚未获得访问权限？<a href="{{ url_for('request_access') }}">申请访问</a></p>{% endif %}
             </form>
         </div>
         {% elif operator_login_enabled %}

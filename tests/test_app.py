@@ -151,29 +151,30 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     access_client = app.test_client()
 
     assert access_client.get("/browse").status_code == 302
-    request_page = access_client.get("/request-access")
+    request_page = access_client.get("/login")
     assert request_page.status_code == 200
-    assert "申请并发送登录链接" in request_page.get_data(as_text=True)
+    assert "发送登录链接" in request_page.get_data(as_text=True)
+    request_access_response = access_client.get("/request-access")
+    assert request_access_response.status_code == 302
+    assert "/login" in request_access_response.headers["Location"]
     with access_client.session_transaction() as session:
-        csrf_token = session["access_request_csrf"]
+        csrf_token = session["login_csrf"]
 
     malformed_csrf = access_client.post(
-        "/request-access",
+        "/login",
         data={
             "csrf_token": "非 ASCII",
             "email": "researcher@example.com",
-            "accept_terms": "yes",
         },
     )
     assert malformed_csrf.status_code == 200
     assert "请刷新页面后重试" in malformed_csrf.get_data(as_text=True)
 
     response = access_client.post(
-        "/request-access",
+        "/login",
         data={
             "csrf_token": csrf_token,
             "email": "Researcher@Example.com",
-            "accept_terms": "yes",
         },
     )
     assert response.status_code == 200
@@ -183,17 +184,15 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     assert sent_links[0].encode() not in access_db.read_bytes()
 
     duplicate = access_client.post(
-        "/request-access",
+        "/login",
         data={
             "csrf_token": csrf_token,
             "email": "Researcher@example.com",
-            "accept_terms": "yes",
         },
     )
     assert duplicate.status_code == 200
     assert len(sent_links) == 1
 
-    access_client.get("/login")
     with access_client.session_transaction() as login_session:
         login_csrf = login_session["login_csrf"]
     login = access_client.post(
@@ -271,7 +270,7 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
             "email": "researcher@example.com",
         },
     )
-    assert "我们已发送一封登录邮件" in emailed_login.get_data(as_text=True)
+    assert "登录链接已发送至您的邮箱" in emailed_login.get_data(as_text=True)
     assert len(sent_links) == 2
     returning_login = access_client.post(
         "/login",
