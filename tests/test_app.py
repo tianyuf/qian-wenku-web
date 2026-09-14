@@ -69,58 +69,46 @@ def test_not_found_routes(client):
     assert response.is_json
 
 
-def test_beta_login_flow(artifact_dir, monkeypatch):
-    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
+def test_service_token_api_access(artifact_dir, monkeypatch):
+    monkeypatch.delenv("ACCESS_DATABASE_PATH", raising=False)
+    monkeypatch.setenv("WENKU_SERVICE_TOKEN", "fixture-service-token")
     monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
     app = create_app(
         db_path=artifact_dir / "corpus.db",
         mapping_path=artifact_dir / "page_images.json",
         manifest_path=artifact_dir / "manifest.json",
     )
     app.config.update(TESTING=True)
-    beta_client = app.test_client()
+    client = app.test_client()
 
-    response = beta_client.get("/browse?content_type=wenji")
+    # Without the header the API is protected.
+    assert client.get("/api/meta/stats").status_code == 401
+    # With the service token, machine access is allowed.
+    assert client.get(
+        "/api/meta/stats", headers={"X-Service-Token": "fixture-service-token"}
+    ).status_code == 200
+    # Wrong token is rejected.
+    assert client.get(
+        "/api/meta/stats", headers={"X-Service-Token": "nope"}
+    ).status_code == 401
+
+
+def test_login_rejects_external_redirects(artifact_dir, monkeypatch):
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    # No auth store: login page redirects to the index (auth disabled).
+    response = client.post(
+        "/login",
+        data={"action": "consume_magic_link", "csrf_token": "x", "next": "https://example.com"},
+    )
     assert response.status_code == 302
-    assert "/login?next=/browse?content_type%3Dwenji" in response.headers["Location"]
-    assert beta_client.get("/api/meta/stats").status_code == 401
-
-    wrong = beta_client.post(
-        "/login", data={"passphrase": "wrong", "next": "/browse"}
-    )
-    assert wrong.status_code == 200
-    assert "管理员口令不正确" in wrong.get_data(as_text=True)
-    assert 'lang="zh-CN"' in wrong.get_data(as_text=True)
-    assert "Request access" not in wrong.get_data(as_text=True)
-
-    login = beta_client.post(
-        "/login",
-        data={"passphrase": "fixture-passphrase", "next": "/browse"},
-    )
-    assert login.status_code == 302
-    assert login.headers["Location"].endswith("/browse")
-    assert beta_client.get("/browse").status_code == 200
-    assert "/account" not in beta_client.get("/browse").get_data(as_text=True)
-
-    assert beta_client.post("/logout").status_code == 302
-    assert beta_client.get("/browse").status_code == 302
-
-
-def test_beta_login_rejects_external_redirects(artifact_dir, monkeypatch):
-    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
-    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
-    app = create_app(
-        db_path=artifact_dir / "corpus.db",
-        mapping_path=artifact_dir / "page_images.json",
-        manifest_path=artifact_dir / "manifest.json",
-    )
-    app.config.update(TESTING=True)
-    beta_client = app.test_client()
-    response = beta_client.post(
-        "/login",
-        data={"passphrase": "fixture-passphrase", "next": "https://example.com"},
-    )
     assert response.headers["Location"].endswith("/")
 
 
@@ -306,7 +294,8 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
 
 def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
     access_db = tmp_path / "access.db"
-    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ADMIN_EMAILS", "owner@example.com")
     monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
     monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
     monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
@@ -322,8 +311,18 @@ def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
     # Not logged in: /admin redirects.
     assert client.get("/admin").status_code == 302
 
-    login = client.post("/login", data={"passphrase": "fixture-passphrase"})
-    assert login.status_code == 302
+    # Log in with an ADMIN_EMAILS account (seeded directly into the store).
+    import time as time_mod
+    with sqlite3.connect(access_db) as connection:
+        cursor = connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Owner@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+        admin_grant = cursor.lastrowid
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = admin_grant
+        session.permanent = True
 
     with sqlite3.connect(access_db) as connection:
         connection.executemany(
@@ -342,23 +341,16 @@ def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
 
     revoked = client.post(
         "/admin",
-        data={"csrf_token": admin_csrf, "action": "revoke_account", "grant_id": 1},
+        data={"csrf_token": admin_csrf, "action": "revoke_account", "grant_id": 2},
     )
     assert "账户已撤销" in revoked.get_data(as_text=True)
     with sqlite3.connect(access_db) as connection:
         assert connection.execute(
-            "SELECT revoked_at IS NOT NULL FROM access_grants WHERE id = 1"
+            "SELECT revoked_at IS NOT NULL FROM access_grants WHERE id = 2"
         ).fetchone()[0]
 
-    individual_login = client.post(
-        "/login",
-        data={
-            "action": "consume_magic_link",
-            "csrf_token": admin_csrf,
-            "token": "qml_bad",
-        },
-    )
-    assert "请刷新页面后重试" in individual_login.get_data(as_text=True)
+    # A consumed-link attempt with a fresh login CSRF is rejected as invalid.
+    client.get("/login")
     with client.session_transaction() as session:
         login_csrf = session["login_csrf"]
     individual_login = client.post(
@@ -373,16 +365,16 @@ def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
 
     reinstated = client.post(
         "/admin",
-        data={"csrf_token": admin_csrf, "action": "reinstate_account", "grant_id": 1},
+        data={"csrf_token": admin_csrf, "action": "reinstate_account", "grant_id": 2},
     )
     assert "账户已恢复" in reinstated.get_data(as_text=True)
     with sqlite3.connect(access_db) as connection:
         assert connection.execute(
-            "SELECT revoked_at IS NULL FROM access_grants WHERE id = 1"
+            "SELECT revoked_at IS NULL FROM access_grants WHERE id = 2"
         ).fetchone()[0]
 
     invalid_csrf = client.post(
-        "/admin", data={"csrf_token": "wrong", "action": "revoke_account", "grant_id": 1}
+        "/admin", data={"csrf_token": "wrong", "action": "revoke_account", "grant_id": 2}
     )
     assert "请刷新页面后重试" in invalid_csrf.get_data(as_text=True)
 

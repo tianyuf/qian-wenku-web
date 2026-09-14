@@ -42,18 +42,8 @@
                 <button type="submit" class="btn btn-primary">发送登录链接</button>
             </form>
         </div>
-        {% elif operator_login_enabled %}
-        <p class="login-description">输入管理员口令以继续。</p>
-        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
-        <form method="post" class="login-form">
-            <input type="hidden" name="next" value="{{ next_url }}">
-            <div class="filter-group">
-                <label for="passphrase">管理员口令</label>
-                <input class="form-control" id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
-            </div>
-            <button type="submit" class="btn btn-primary">进入文库</button>
-        </form>
         {% else %}
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <div class="login-error" role="alert">邮件登录暂时不可用。</div>
         {% endif %}
     </section>

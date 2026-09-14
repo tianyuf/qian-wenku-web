@@ -25,17 +25,18 @@ async def test_tools_registered():
         assert names == ["get_entry", "list_sources", "search"]
 
 
-def test_base_url_and_passphrase_env(monkeypatch):
+def test_base_url_and_service_token_env(monkeypatch):
     import importlib
     import qian_wenku_mcp.server as srv
 
     monkeypatch.setenv("WENKU_BASE_URL", "http://example.invalid:9999/")
-    monkeypatch.setenv("WENKU_BETA_PASSPHRASE", "secret")
+    monkeypatch.setenv("WENKU_SERVICE_TOKEN", "secret")
     importlib.reload(srv)
     assert srv._client.base_url == "http://example.invalid:9999"
-    assert srv._client.passphrase == "secret"
+    assert srv._client.service_token == "secret"
+    assert srv._client._client.headers["X-Service-Token"] == "secret"
     monkeypatch.delenv("WENKU_BASE_URL")
-    monkeypatch.delenv("WENKU_BETA_PASSPHRASE")
+    monkeypatch.delenv("WENKU_SERVICE_TOKEN")
     importlib.reload(srv)
 
 

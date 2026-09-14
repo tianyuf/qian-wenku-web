@@ -92,6 +92,43 @@ a.link-plain:hover {
     min-width: 0;
 }
 
+/* Pushes account/admin/logout items to the right edge */
+.app-header .nav-spacer {
+    flex: 1 1 auto;
+    min-width: 0.5rem;
+}
+
+/* Dropdown trigger styled like a nav link */
+.app-header .dropdown-toggle {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    padding: 0.42rem 0.7rem;
+    border-radius: 5px;
+}
+
+.app-header .dropdown-toggle:hover,
+.app-header .dropdown-toggle.show {
+    color: var(--text);
+    background: var(--surface-muted);
+}
+
+.app-header .dropdown-toggle.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
+}
+
+.app-header .dropdown-toggle::after {
+    margin-left: 0.3em;
+    vertical-align: 0.15em;
+}
+
+.app-header .dropdown-menu {
+    --bs-dropdown-min-width: 10rem;
+}
+
 /* Directional fade hints, toggled by JS only while the nav overflows */
 .app-header .nav.can-scroll {
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);

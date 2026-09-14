@@ -63,7 +63,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     app.config['R2_CDN_URL'] = (
         f"{app.config['R2_CDN_BASE'].rstrip('/')}/{app.config['R2_PREFIX'].strip('/')}"
     )
-    app.config['BETA_PASSPHRASE'] = os.getenv("BETA_PASSPHRASE", "")
+    app.config['WENKU_SERVICE_TOKEN'] = os.getenv("WENKU_SERVICE_TOKEN", "")
     app.config['ADMIN_EMAILS'] = {
         email.casefold().strip()
         for email in os.getenv("ADMIN_EMAILS", "").split(",")
@@ -101,7 +101,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     if app.config['ACCESS_DATABASE_PATH']:
         initialize_access_database(app.config['ACCESS_DATABASE_PATH'])
     auth_enabled = bool(
-        app.config['BETA_PASSPHRASE'] or app.config['ACCESS_DATABASE_PATH']
+        app.config['ACCESS_DATABASE_PATH'] or app.config['WENKU_SERVICE_TOKEN']
     )
     magic_login_enabled = bool(
         app.config['ACCESS_DATABASE_PATH']
@@ -134,13 +134,13 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
     def session_is_admin():
-        """Admin = operator passphrase session, or email in ADMIN_EMAILS."""
+        """Admin = account email listed in ADMIN_EMAILS."""
         if not session.get("beta_authenticated"):
             return False
         grant_id = session.get("access_grant_id")
-        if grant_id is None:
-            return bool(app.config['BETA_PASSPHRASE'])
-        if not app.config['ACCESS_DATABASE_PATH'] or not app.config['ADMIN_EMAILS']:
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return False
+        if not app.config['ADMIN_EMAILS']:
             return False
         email = get_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
         return email is not None and email.casefold() in app.config['ADMIN_EMAILS']
@@ -154,10 +154,20 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         # Public AI install doc: no auth required so chat harnesses can fetch it.
         if request.path == "/mcp/install.md":
             return None
+        # Service-to-service auth (hosted MCP -> web API).
+        if app.config['WENKU_SERVICE_TOKEN'] and hmac.compare_digest(
+            request.headers.get("X-Service-Token", "").encode(),
+            app.config['WENKU_SERVICE_TOKEN'].encode(),
+        ):
+            return None
+        # With only a service token (no account store), protect API routes but
+        # keep pages public.
+        if not app.config['ACCESS_DATABASE_PATH']:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
+            return None
         if session.get("beta_authenticated"):
             grant_id = session.get("access_grant_id")
-            if grant_id is None and app.config['BETA_PASSPHRASE']:
-                return None
             if grant_id is not None and app.config['ACCESS_DATABASE_PATH']:
                 if is_access_grant_active(app.config['ACCESS_DATABASE_PATH'], grant_id):
                     return None
@@ -206,17 +216,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                         session.permanent = True
                         return redirect(safe_next_url(stored_next_url))
                     error = "登录链接无效、已使用或已过期。请重新获取。"
-            elif "passphrase" in request.form:
-                supplied = request.form.get("passphrase", "")
-                fallback_valid = bool(app.config['BETA_PASSPHRASE']) and hmac.compare_digest(
-                    supplied.encode(), app.config['BETA_PASSPHRASE'].encode()
-                )
-                if fallback_valid:
-                    session.clear()
-                    session["beta_authenticated"] = True
-                    session.permanent = True
-                    return redirect(next_url)
-                error = "管理员口令不正确。"
             elif not magic_login_enabled:
                 error = "邮件登录暂时不可用。"
             elif not hmac.compare_digest(
@@ -275,7 +274,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             next_url=next_url,
             csrf_token=csrf_token,
             magic_login_enabled=magic_login_enabled,
-            operator_login_enabled=bool(app.config['BETA_PASSPHRASE']),
             turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
         )
 
@@ -374,7 +372,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.route('/admin', methods=['GET', 'POST'])
     def admin():
-        # Operator console: passphrase session, or an account whose email is
+        # Operator console: an account whose email is listed in ADMIN_EMAILS.
         # listed in ADMIN_EMAILS.
         if not (app.config['ACCESS_DATABASE_PATH'] and session_is_admin()):
             return redirect(url_for("views.index"))
@@ -482,7 +480,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "style_version": style_version,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
-            "operator_session": bool(app.config['BETA_PASSPHRASE']) and session_is_admin(),
+            "operator_session": session_is_admin(),
             "magic_login_enabled": magic_login_enabled,
         }
 

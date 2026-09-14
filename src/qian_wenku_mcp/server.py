@@ -3,7 +3,7 @@
 Two modes:
 
 * **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with the
-  configured service credential in `WENKU_BETA_PASSPHRASE`; the server logs into the web API
+  configured service credential in `WENKU_SERVICE_TOKEN`; the server calls the web API
   and returns results over stdio.
 
 * **hosted HTTP** (`python -m qian_wenku_mcp.server`) — runs on the
@@ -32,44 +32,24 @@ DEFAULT_BASE_URL = "https://wenku.qianxuesen.org"
 class WenkuClient:
     """Synchronous HTTP client for the Qian Wenku JSON API.
 
-    If a passphrase is configured and the server requires login,
-    performs the one-time login POST and reuses the session
-    cookie for subsequent requests.
+    Authenticates with the shared service token via the X-Service-Token
+    header on every request.
     """
 
-    def __init__(self, base_url: str, passphrase: str = "") -> None:
+    def __init__(self, base_url: str, service_token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
-        self.passphrase = passphrase
+        self.service_token = service_token
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=30.0,
             follow_redirects=True,
+            headers=(
+                {"X-Service-Token": service_token} if service_token else {}
+            ),
         )
-        self._authenticated = False
-
-    def _login_if_needed(self) -> None:
-        if self._authenticated:
-            return
-        if not self.passphrase:
-            # No passphrase configured; hope the API is open.
-            self._authenticated = True
-            return
-        resp = self._client.post(
-            "/login",
-            data={"passphrase": self.passphrase, "next": "/"},
-        )
-        # Success redirects to the requested page; rejection stays on /login.
-        if resp.url.path == "/login":
-            raise PermissionError("Access code rejected by server")
-        self._authenticated = True
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        self._login_if_needed()
         resp = self._client.get(path, params=params)
-        if resp.status_code == 401 and self.passphrase:
-            self._authenticated = False
-            self._login_if_needed()
-            resp = self._client.get(path, params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -117,8 +97,8 @@ mcp = FastMCP(
 )
 
 _base_url = os.environ.get("WENKU_BASE_URL", DEFAULT_BASE_URL)
-_passphrase = os.environ.get("WENKU_BETA_PASSPHRASE", "")
-_client = WenkuClient(_base_url, _passphrase)
+_service_token = os.environ.get("WENKU_SERVICE_TOKEN", "")
+_client = WenkuClient(_base_url, _service_token)
 
 
 def _permalink_url(permalink: str | None) -> str | None:
@@ -297,11 +277,10 @@ def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
         raise RuntimeError("ACCESS_CODE_SECRET is required for individual MCP tokens")
     if not operator_token and not access_db_path:
         raise RuntimeError("Hosted MCP authentication is not configured")
-    if not _passphrase:
+    if not _service_token:
         raise RuntimeError(
-            "WENKU_BETA_PASSPHRASE is required for hosted MCP web API access"
+            "WENKU_SERVICE_TOKEN is required for hosted MCP web API access"
         )
-    _client._login_if_needed()
 
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):  # type: ignore[override]

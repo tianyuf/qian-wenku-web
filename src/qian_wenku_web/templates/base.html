@@ -25,14 +25,21 @@
             </a>
             {% endblock %}
             {% block header_nav %}
-            <nav class="nav" aria-label="主导航">
+            <nav class="nav align-items-center" aria-label="主导航">
                 <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('views.index') }}">搜索</a>
                 <a class="nav-link {% if request.path == '/browse' or (request.path.startswith('/browse/') and not request.path.startswith('/browse/recipient') and not request.path.startswith('/browse/entit')) %}active{% endif %}" href="{{ url_for('views.browse') }}">目录</a>
-                <a class="nav-link {% if request.path.startswith('/browse/recipient') %}active{% endif %}" href="{{ url_for('views.browse_recipients') }}">收信人</a>
-                <a class="nav-link {% if request.path.startswith('/browse/entit') %}active{% endif %}" href="{{ url_for('views.browse_entities') }}">人物机构</a>
-                <a class="nav-link {% if request.path.startswith('/date') or request.path == '/timeline' %}active{% endif %}" href="{{ url_for('views.browse_timeline') }}">时间线</a>
-                <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
+                <div class="dropdown">
+                    <button class="nav-link dropdown-toggle {% if request.path.startswith('/browse/recipient') or request.path.startswith('/browse/entit') or request.path.startswith('/date') or request.path == '/timeline' %}active{% endif %}"
+                            type="button" data-bs-toggle="dropdown" aria-expanded="false">浏览更多</button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{{ url_for('views.browse_recipients') }}">收信人</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('views.browse_entities') }}">人物机构</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('views.browse_timeline') }}">时间线</a></li>
+                    </ul>
+                </div>
                 <a class="nav-link {% if request.path == '/mcp' %}active{% endif %}" href="{{ url_for('views.mcp_guide') }}">MCP</a>
+                <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
+                <div class="nav-spacer"></div>
                 {% if individual_account %}
                 <a class="nav-link {% if request.path == '/account' %}active{% endif %}" href="{{ url_for('account') }}">账户</a>
                 {% endif %}

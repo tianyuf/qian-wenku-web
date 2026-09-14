@@ -82,16 +82,17 @@ All configuration is via environment variables (not loaded from `.env` files by 
 |---|---|
 | `WENKU_ARTIFACT_DIR` | Path to the artifact directory |
 | `R2_CDN_BASE` / `R2_PREFIX` | Where page scans are served from |
-| `BETA_PASSPHRASE` | Optional operator fallback credential; access control is also enabled when `ACCESS_DATABASE_PATH` is set |
+| `BETA_PASSPHRASE` | Removed; use `ADMIN_EMAILS` for admin access |
 | `SECRET_KEY` / `SESSION_COOKIE_SECURE` | Session signing key and secure-cookie switch; required when access control is enabled |
 | `ACCESS_DATABASE_PATH` / `ACCESS_CODE_SECRET` | Writable authentication database and secret used to hash login and MCP tokens |
+| `ADMIN_EMAILS` | Comma-separated emails granted access to the admin console |
 | `ACCESS_HOURLY_LIMIT` | Global magic-link issuance ceiling |
 | `ACCESS_TERMS_VERSION` | Accepted archive-use terms version stored with each grant |
 | `RESEND_API_KEY` / `ACCESS_FROM_EMAIL` | Resend credentials for automatic code delivery; keep the API key out of source control |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile credentials required for the public request form |
 | `PUBLIC_BASE_URL` | Public archive origin used in login emails |
 | `WENKU_MCP_TOKEN` | Optional operator fallback token for the hosted MCP endpoint |
-| `WENKU_BETA_PASSPHRASE` | Service credential used by the MCP process to call the protected web API |
+| `WENKU_SERVICE_TOKEN` | Service credential sent as X-Service-Token by the MCP process to call the protected web API |
 
 ### Routes
 
