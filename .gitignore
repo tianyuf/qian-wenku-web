@@ -16,3 +16,5 @@ backups/
 .opencode/
 build/
 dist/
+.playwright-mcp/
+*.png
