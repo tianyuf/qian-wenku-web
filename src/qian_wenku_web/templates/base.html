@@ -305,6 +305,16 @@
                 window.addEventListener('resize', updateNavFade);
                 if (window.ResizeObserver) new ResizeObserver(updateNavFade).observe(nav);
                 updateNavFade();
+
+                // Fallback for browsers without :has(): release the overflow
+                // clip while a dropdown inside the nav is open.
+                var supportsHas = window.CSS && CSS.supports && CSS.supports('selector(:has(a))');
+                if (!supportsHas) {
+                    document.querySelectorAll('.app-header .dropdown-toggle').forEach(function(toggle) {
+                        toggle.addEventListener('show.bs.dropdown', function() { nav.style.overflow = 'visible'; });
+                        toggle.addEventListener('hidden.bs.dropdown', function() { nav.style.overflow = ''; });
+                    });
+                }
             }
 
             // Make resize handles keyboard-focusable separators

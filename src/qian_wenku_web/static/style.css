@@ -92,6 +92,11 @@ a.link-plain:hover {
     min-width: 0;
 }
 
+/* Allow the dropdown to escape the scroll container while open */
+.app-header .nav:has(.dropdown-menu.show) {
+    overflow: visible;
+}
+
 /* Pushes account/admin/logout items to the right edge */
 .app-header .nav-spacer {
     flex: 1 1 auto;
