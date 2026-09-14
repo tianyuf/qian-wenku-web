@@ -8,13 +8,13 @@
 <main class="favorites-view" id="main">
     <section class="favorites-panel" aria-labelledby="favorites-title">
         <span class="section-kicker">文库访问</span>
-        <h1 id="favorites-title">收藏</h1>
+        <h1 id="favorites-title">收藏{% if favorites %} <span class="favorites-count">{{ favorites|length }}</span>{% endif %}</h1>
 
         {% if favorites %}
         <div class="favorites-list">
             {% for fav in favorites %}
             <div class="favorite-row">
-                <div>
+                <div class="favorite-main">
                     <a href="{{ url_for('views.entry_permalink', permalink=fav.permalink) }}">{{ fav.title }}</a>
                     <span>{{ fav.source_title }} · {{ fav.date_display }} · 第 {{ fav.start_page }} 页</span>
                     {% if fav.notes %}
@@ -36,18 +36,21 @@
             {% endfor %}
         </div>
         {% else %}
-        <p class="login-description">暂无收藏。在条目页面点击“☆ 收藏”即可添加，收藏会保存在您的账户下。</p>
-        <a class="btn btn-primary" href="{{ url_for('views.index') }}">去搜索</a>
+        <div class="favorites-empty">
+            <p>暂无收藏。</p>
+            <p class="text-muted small">在条目页面点击“☆ 收藏”即可添加，收藏会保存在您的账户下。</p>
+            <a class="btn btn-primary" href="{{ url_for('views.index') }}">去搜索</a>
+        </div>
         {% endif %}
 
         {% if annotations %}
         <section class="account-section favorites-annotations" aria-labelledby="annotations-title">
-            <h2 id="annotations-title">我的批注</h2>
-            <p class="text-muted small mb-2">这些条目有您的批注但尚未收藏。</p>
+            <h2 id="annotations-title">我的批注 <span class="favorites-count">{{ annotations|length }}</span></h2>
+            <p class="text-muted small">这些条目有您的批注但尚未收藏。</p>
             <div class="favorites-list">
                 {% for item in annotations %}
                 <div class="favorite-row">
-                    <div>
+                    <div class="favorite-main">
                         <a href="{{ url_for('views.entry_permalink', permalink=item.permalink) }}">{{ item.title }}</a>
                         <span>{{ item.source_title }} · {{ item.date_display }} · 第 {{ item.start_page }} 页 · 批注于 {{ item.note.created_display }}</span>
                         <div class="favorite-notes">

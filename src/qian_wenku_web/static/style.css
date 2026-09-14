@@ -1254,8 +1254,24 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
 }
 
 .favorites-list {
-    margin-top: 1rem;
     border-top: 1px solid var(--border);
+}
+
+.favorite-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.favorite-row:last-child {
+    border-bottom: 0;
+}
+
+.favorite-main {
+    min-width: 0;
 }
 
 .favorites-view {
@@ -1280,6 +1296,35 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     margin: 0 0 1rem;
     font-size: 1.35rem;
     font-weight: 700;
+}
+
+.favorites-count {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    vertical-align: 0.15em;
+}
+
+.favorites-empty {
+    padding: 1.5rem 0 0.5rem;
+    text-align: center;
+}
+
+.favorites-empty p {
+    margin-bottom: 0.5rem;
+}
+
+.favorites-annotations {
+    margin-top: 1.75rem;
+}
+
+.favorites-annotations .favorites-list {
+    margin-top: 0.75rem;
 }
 
 /* Entry notes (annotations) */
@@ -1334,15 +1379,6 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     padding: 0.05em 0.1em;
     border-bottom: 2px solid var(--accent);
     cursor: pointer;
-}
-
-.favorite-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.65rem 0;
-    border-bottom: 1px solid var(--border);
 }
 
 .favorite-row > div {
