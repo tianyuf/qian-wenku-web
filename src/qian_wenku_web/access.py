@@ -58,6 +58,10 @@ def initialize_access_database(path: str) -> None:
                 connection.execute(
                     "UPDATE access_grants SET expires_at = 9223372036854775807"
                 )
+            if "pending_email" not in columns:
+                connection.execute(
+                    "ALTER TABLE access_grants ADD COLUMN pending_email TEXT"
+                )
         else:
             connection.execute(
                 """
@@ -68,6 +72,7 @@ def initialize_access_database(path: str) -> None:
                     terms_version TEXT NOT NULL,
                     requested_at INTEGER NOT NULL,
                     expires_at INTEGER,
+                    pending_email TEXT,
                     revoked_at INTEGER,
                     last_used_at INTEGER
                 )
@@ -335,6 +340,110 @@ def get_access_grant(path: str, grant_id: int) -> str | None:
             (grant_id,),
         ).fetchone()
     return str(row[0]) if row else None
+
+
+def request_email_change(
+    path: str,
+    secret: str,
+    grant_id: int,
+    new_email: str,
+    base_url: str,
+) -> tuple[str, str] | None:
+    """Stage a pending email and issue a confirmation link for the new address.
+
+    Returns (pending_email, token), or None when the account is inactive.
+    """
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT email FROM access_grants WHERE id = ? AND revoked_at IS NULL",
+            (grant_id,),
+        ).fetchone()
+        if not row:
+            return None
+        connection.execute(
+            "UPDATE access_grants SET pending_email = ? WHERE id = ?",
+            (new_email, grant_id),
+        )
+        for _ in range(3):
+            token = "qml_" + secrets.token_urlsafe(32)
+            try:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO magic_links
+                        (grant_id, token_hash, next_url, purpose, created_at, expires_at)
+                    VALUES (?, ?, ?, 'email_change', ?, ?)
+                    """,
+                    (
+                        grant_id,
+                        _code_hash(secret, token),
+                        "/account",
+                        now,
+                        now + 3600,
+                    ),
+                )
+                break
+            except sqlite3.IntegrityError:
+                continue
+        else:
+            raise RuntimeError("Unable to generate a unique email-change link")
+    return new_email, token
+
+
+def consume_email_change(path: str, secret: str, token: str) -> str | None:
+    """Consume an email-change link and apply the pending email."""
+    if not token.startswith("qml_") or len(token) > 128:
+        raise ValueError("invalid")
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT magic_links.id, magic_links.grant_id, access_grants.pending_email
+            FROM magic_links
+            JOIN access_grants ON access_grants.id = magic_links.grant_id
+            WHERE magic_links.token_hash = ?
+              AND magic_links.purpose = 'email_change'
+              AND magic_links.expires_at > ?
+              AND magic_links.used_at IS NULL
+              AND access_grants.revoked_at IS NULL
+            """,
+            (_code_hash(secret, token), now),
+        ).fetchone()
+        if not row or row[2] is None:
+            return None
+        link_id, grant_id, pending_email = int(row[0]), int(row[1]), str(row[2])
+        cursor = connection.execute(
+            "UPDATE magic_links SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (now, link_id),
+        )
+        if cursor.rowcount != 1:
+            return None
+        connection.execute(
+            "UPDATE access_grants SET email = ?, pending_email = NULL, last_used_at = ? "
+            "WHERE id = ?",
+            (pending_email, now, grant_id),
+        )
+    return pending_email
+
+
+def cancel_email_change(path: str, grant_id: int) -> None:
+    """Drop a staged pending email change."""
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute(
+            "UPDATE access_grants SET pending_email = NULL WHERE id = ?", (grant_id,)
+        )
+
+
+def get_pending_email(path: str, grant_id: int) -> str | None:
+    """Return the staged pending email for an account, if any."""
+    with _read_only_connection(path) as connection:
+        row = connection.execute(
+            "SELECT pending_email FROM access_grants WHERE id = ? AND revoked_at IS NULL",
+            (grant_id,),
+        ).fetchone()
+    return str(row[0]) if row and row[0] is not None else None
 
 
 def create_mcp_token(
@@ -618,6 +727,37 @@ def send_magic_link(
             "如非本人操作，可忽略本邮件。</p>"
         ),
         idempotency_key=f"qian-wenku-magic-link-{link_id}",
+    )
+
+
+def send_email_change_link(
+    api_key: str,
+    sender: str,
+    recipient: str,
+    token: str,
+    base_url: str,
+) -> None:
+    """Send the confirmation link for an email change to the new address."""
+    confirm_url = f"{base_url.rstrip('/')}/account/email-change?token={token}"
+    safe_url = html.escape(confirm_url, quote=True)
+    _send_email(
+        api_key,
+        sender,
+        recipient,
+        subject="确认更换登录邮箱 · qianxuesen.org",
+        text=(
+            "请点击以下链接，确认将您 qianxuesen.org 账户的登录邮箱更改为本地址：\n\n"
+            f"{confirm_url}\n\n"
+            "链接将在 1 小时后失效，且仅可使用一次。"
+            "如非本人操作，可忽略本邮件，当前邮箱不受影响。"
+        ),
+        html=(
+            "<p>请点击以下链接，确认将您 qianxuesen.org 账户的登录邮箱更改为本地址：</p>"
+            f'<p><a href="{safe_url}">确认更换邮箱</a></p>'
+            "<p>链接将在 1 小时后失效，且仅可使用一次。"
+            "如非本人操作，可忽略本邮件，当前邮箱不受影响。</p>"
+        ),
+        idempotency_key=f"qian-wenku-email-change-{hashlib.sha256(token.encode()).hexdigest()[:16]}",
     )
 
 

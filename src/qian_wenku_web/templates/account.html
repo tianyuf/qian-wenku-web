@@ -13,12 +13,18 @@
 
         <dl class="account-details">
             <div>
-                <dt>访问状态</dt>
-                <dd>长期有效</dd>
-            </div>
-            <div>
                 <dt>登录邮箱</dt>
                 <dd>{{ account_email }}</dd>
+            </div>
+            {% if pending_email %}
+            <div>
+                <dt>待确认的新邮箱</dt>
+                <dd>{{ pending_email }}（未确认，未生效）</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>访问状态</dt>
+                <dd>长期有效</dd>
             </div>
         </dl>
 
@@ -73,6 +79,29 @@
                 </div>
                 <button type="submit" class="btn btn-primary">创建 MCP 令牌</button>
             </form>
+        </section>
+
+        <section class="account-section" aria-labelledby="email-title">
+            <h2 id="email-title">更换登录邮箱</h2>
+            {% if pending_email %}
+            <p class="text-muted small">已向 <strong>{{ pending_email }}</strong> 发送确认邮件。确认后生效；在此之前邮箱保持不变。</p>
+            <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="cancel_email_change">
+                <button type="submit" class="btn btn-outline-secondary">取消更换</button>
+            </form>
+            {% else %}
+            <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="request_email_change">
+                <div class="filter-group">
+                    <label for="new-email">新邮箱地址</label>
+                    <input class="form-control" id="new-email" name="email" type="email" required autocomplete="email" placeholder="例如：name@example.com">
+                </div>
+                <button type="submit" class="btn btn-primary">发送确认邮件</button>
+                <p class="text-muted small mt-2 mb-0">确认邮件发送到新邮箱，点击链接后生效；确认前邮箱保持不变。</p>
+            </form>
+            {% endif %}
         </section>
 
         <form method="post" action="{{ url_for('logout') }}" class="account-logout">

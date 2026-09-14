@@ -26,9 +26,12 @@ from .access import (
     access_database_is_healthy,
     count_all_accounts,
     consume_magic_link,
+    consume_email_change,
+    cancel_email_change,
     create_mcp_token,
     delete_magic_link,
     get_access_grant,
+    get_pending_email,
     initialize_access_database,
     is_access_grant_active,
     issue_magic_link,
@@ -36,8 +39,10 @@ from .access import (
     list_mcp_tokens,
     normalize_email,
     reinstate_account,
+    request_email_change,
     revoke_account,
     revoke_mcp_token,
+    send_email_change_link,
     send_magic_link,
     send_token_revoked_notice,
     verify_turnstile,
@@ -152,7 +157,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         if request.endpoint in {"login", "static", "health_check"}:
             return None
         # Public AI install doc: no auth required so chat harnesses can fetch it.
-        if request.path == "/mcp/install.md":
+        if request.path in ("/mcp/install.md", "/account/email-change"):
             return None
         # Service-to-service auth (hosted MCP -> web API).
         if app.config['WENKU_SERVICE_TOKEN'] and hmac.compare_digest(
@@ -347,9 +352,50 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                             app.logger.exception("Token-revoked notice failed")
                     else:
                         error = "MCP 令牌不存在或已撤销。"
+            elif request.form.get("action") == "request_email_change":
+                new_email = normalize_email(request.form.get("email", ""))
+                if not new_email:
+                    error = "请输入有效的邮箱地址。"
+                else:
+                    change = request_email_change(
+                        app.config['ACCESS_DATABASE_PATH'],
+                        app.config['ACCESS_CODE_SECRET'],
+                        grant_id,
+                        new_email,
+                        app.config['PUBLIC_BASE_URL'],
+                    )
+                    if change is None:
+                        session.clear()
+                        return redirect(url_for("login"))
+                    _, change_token = change
+                    try:
+                        send_email_change_link(
+                            app.config['RESEND_API_KEY'],
+                            app.config['ACCESS_FROM_EMAIL'],
+                            new_email,
+                            change_token,
+                            app.config['PUBLIC_BASE_URL'],
+                        )
+                    except EmailDeliveryError:
+                        cancel_email_change(
+                            app.config['ACCESS_DATABASE_PATH'], grant_id
+                        )
+                        app.logger.exception("Email-change delivery failed")
+                        error = "确认邮件发送失败，请稍后重试。"
+                    else:
+                        message = (
+                            "确认邮件已发送至新邮箱，请点击邮件中的链接完成更换。"
+                            "在确认前邮箱保持不变。"
+                        )
+            elif request.form.get("action") == "cancel_email_change":
+                cancel_email_change(app.config['ACCESS_DATABASE_PATH'], grant_id)
+                message = "已取消邮箱更换。"
             else:
                 error = "未知操作。"
 
+        pending_email = get_pending_email(
+            app.config['ACCESS_DATABASE_PATH'], grant_id
+        )
         mcp_tokens = list_mcp_tokens(app.config['ACCESS_DATABASE_PATH'], grant_id)
         for mcp_token in mcp_tokens:
             mcp_token["created_date"] = datetime.fromtimestamp(
@@ -363,6 +409,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         return render_template(
             'account.html',
             account_email=email,
+            pending_email=pending_email,
             csrf_token=csrf_token,
             error=error,
             message=message,
@@ -370,10 +417,32 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             new_mcp_token=new_mcp_token,
         )
 
+    @app.route('/account/email-change')
+    def email_change_confirm():
+        token = request.args.get("token", "")
+        if not token or not app.config['ACCESS_DATABASE_PATH']:
+            return redirect(url_for("views.index"))
+        new_email = consume_email_change(
+            app.config['ACCESS_DATABASE_PATH'],
+            app.config['ACCESS_CODE_SECRET'],
+            token,
+        )
+        if new_email is None:
+            return render_template(
+                'login.html',
+                error=None,
+                submitted=False,
+                next_url="",
+                csrf_token="",
+                magic_login_enabled=magic_login_enabled,
+                turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
+                email_change_failed=True,
+            ), 200
+        return redirect(url_for("account"))
+
     @app.route('/admin', methods=['GET', 'POST'])
     def admin():
         # Operator console: an account whose email is listed in ADMIN_EMAILS.
-        # listed in ADMIN_EMAILS.
         if not (app.config['ACCESS_DATABASE_PATH'] and session_is_admin()):
             return redirect(url_for("views.index"))
 

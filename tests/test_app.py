@@ -488,3 +488,84 @@ def test_admin_emails_grant_console_access(artifact_dir, tmp_path, monkeypatch):
         str(access_db), "fixture-access-secret", grant_id, "Test"
     )
     assert created is not None
+
+
+def test_email_change_flow(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    change_links = []
+
+    def fake_change_link(api_key, sender, recipient, token, base_url):
+        change_links.append((recipient, token))
+
+    monkeypatch.setattr("qian_wenku_web.app.send_email_change_link", fake_change_link)
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Old@Example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = 1
+        session.permanent = True
+        session["account_csrf"] = "csrf"
+
+    page = client.get("/account")
+    assert "Old@Example.com" in page.get_data(as_text=True)
+    assert "更换登录邮箱" in page.get_data(as_text=True)
+
+    requested = client.post(
+        "/account",
+        data={
+            "csrf_token": "csrf",
+            "action": "request_email_change",
+            "email": "New@Example.COM",
+        },
+    )
+    text = requested.get_data(as_text=True)
+    assert requested.status_code == 200
+    assert "确认邮件已发送至新邮箱" in text
+    assert "New@example.com" in text
+    assert len(change_links) == 1
+    recipient, token = change_links[0]
+    assert recipient == "New@example.com"
+
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT pending_email FROM access_grants WHERE id = 1"
+        ).fetchone()[0] == "New@example.com"
+        assert connection.execute(
+            "SELECT email FROM access_grants WHERE id = 1"
+        ).fetchone()[0] == "Old@Example.com"
+
+    # Confirm via the link.
+    confirmed = client.get(f"/account/email-change?token={token}")
+    assert confirmed.status_code == 302
+    with sqlite3.connect(access_db) as connection:
+        row = connection.execute(
+            "SELECT email, pending_email FROM access_grants WHERE id = 1"
+        ).fetchone()
+    assert row[0] == "New@example.com"
+    assert row[1] is None
+
+    # Reusing the link fails.
+    reused = client.get(f"/account/email-change?token={token}")
+    assert reused.status_code == 200
+    assert "登录" in reused.get_data(as_text=True)
