@@ -71,6 +71,9 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="tab-claudedesktop" data-bs-toggle="tab" data-bs-target="#pane-claudedesktop" type="button" role="tab">Claude Desktop</button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-codex" data-bs-toggle="tab" data-bs-target="#pane-codex" type="button" role="tab">Codex</button>
+                </li>
             </ul>
             <div class="tab-content" id="harnessPanes">
                 <div class="tab-pane fade show active" id="pane-opencode" role="tabpanel">
@@ -104,6 +107,16 @@
 }</code></pre>
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置</button>
                     <p class="text-muted small mt-3 mb-0">保存并完全退出（重启）Claude Desktop。</p>
+                </div>
+                <div class="tab-pane fade" id="pane-codex" role="tabpanel">
+                    <p class="text-muted small mb-2">编辑 <code>~/.codex/config.toml</code>（Codex CLI、IDE 扩展与 ChatGPT 桌面端共用此配置），加入：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-codex">[mcp_servers.qian-wenku]
+url = "https://wenku.qianxuesen.org/mcp/rpc"
+bearer_token_env_var = "WENKU_MCP_TOKEN"</code></pre>
+                    <p class="text-muted small mb-2">然后在 shell 配置（如 <code>~/.zshrc</code>）中设置令牌：</p>
+                    <pre class="bg-light p-3 rounded mb-2"><code id="cmd-codex-env">export WENKU_MCP_TOKEN="YOUR_MCP_TOKEN"</code></pre>
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-codex">复制配置</button>
+                    <p class="text-muted small mt-3 mb-0">重启 Codex 后，在 TUI 中输入 <code>/mcp</code> 确认连接。</p>
                 </div>
             </div>
         </div>

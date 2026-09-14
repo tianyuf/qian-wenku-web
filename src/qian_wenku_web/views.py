@@ -1370,12 +1370,12 @@ def mcp_install_doc():
     body = """# Install the Qian Wenku MCP server
 
 Give these instructions to your AI agent (OpenCode, Claude Code, Claude
-Desktop, Cursor, or any MCP-aware assistant). The agent will edit the
+Desktop, Codex, Cursor, or any MCP-aware assistant). The agent will edit the
 appropriate config file for you.
 
 ## What this installs
 
-A remote MCP server pointing at this site. It has three tools:
+A remote MCP server pointing at this site. It has five tools:
 
 - **search**: substring search over corpus entries; filters by year range, content
   type (nianpu / wenji / shuxin), and source volume.
@@ -1385,6 +1385,8 @@ A remote MCP server pointing at this site. It has three tools:
   know what to filter by.
 - **list_favorites**: the user's favorited entries (needs their personal MCP
   token), so the agent can work with a personal reading list.
+- **list_notes**: the user's annotations on entries, including highlighted
+  quotes and comment text (needs their personal MCP token).
 
 The server is hosted — nothing runs on your machine. Your agent calls it
 over HTTPS.
@@ -1462,6 +1464,41 @@ Inside the existing `mcpServers` object, add:
 ```
 
 Tell the user to fully quit and restart Claude Desktop.
+
+### Codex (CLI, IDE extension, ChatGPT desktop app)
+
+Edit `~/.codex/config.toml` (project-scoped servers may live in
+`.codex/config.toml` for trusted projects). Read the existing file,
+preserving all other entries, and merge in:
+
+```toml
+[mcp_servers.qian-wenku]
+url = "https://wenku.qianxuesen.org/mcp/rpc"
+bearer_token_env_var = "WENKU_MCP_TOKEN"
+```
+
+Then the user sets the environment variable, e.g. add to their shell
+profile (`~/.zshrc` / `~/.bashrc`):
+
+```bash
+export WENKU_MCP_TOKEN="USER_MCP_TOKEN"
+```
+
+Replace `USER_MCP_TOKEN` with the user's MCP token. As an alternative to
+the environment variable, a static header also works:
+
+```toml
+[mcp_servers.qian-wenku]
+url = "https://wenku.qianxuesen.org/mcp/rpc"
+http_headers = { "Authorization" = "Bearer USER_MCP_TOKEN" }
+```
+
+If `[mcp_servers.qian-wenku]` already exists, stop and ask the user
+whether to overwrite. Never clobber silently.
+
+Tell the user to restart Codex (CLI / IDE extension / ChatGPT desktop
+app — they share this config), then in a new session use `/mcp` to
+confirm the server is connected, or just ask it to search qian-wenku.
 
 ### Other MCP clients
 
