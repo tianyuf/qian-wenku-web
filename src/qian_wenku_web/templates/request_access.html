@@ -14,7 +14,7 @@
         {% if unavailable %}
         <div class="login-error" role="alert">访问申请暂时不可用。</div>
         {% elif submitted %}
-        <p class="login-description access-success">访问码已发送至您的邮箱，有效期 {{ ttl_days }} 天，同时可用于文库的 MCP 服务。</p>
+        <p class="login-description access-success">访问码已发送至您的邮箱，长期有效，同时可用于文库的 MCP 服务。</p>
         <a class="btn btn-primary w-100" href="{{ url_for('login') }}">输入访问码</a>
         {% else %}
         <p class="login-description">本文库面向研究用途开放。输入您的邮箱，我们会向您发送个人访问码。</p>

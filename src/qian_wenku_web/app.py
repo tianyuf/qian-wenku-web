@@ -5,7 +5,7 @@ import os
 import logging
 import hmac
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from urllib.parse import urlsplit
 
 from flask import (
@@ -58,7 +58,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     app.config['BETA_PASSPHRASE'] = os.getenv("BETA_PASSPHRASE", "")
     app.config['ACCESS_DATABASE_PATH'] = os.getenv("ACCESS_DATABASE_PATH", "")
     app.config['ACCESS_CODE_SECRET'] = os.getenv("ACCESS_CODE_SECRET", "")
-    app.config['ACCESS_CODE_TTL_DAYS'] = int(os.getenv("ACCESS_CODE_TTL_DAYS", "90"))
     app.config['ACCESS_HOURLY_LIMIT'] = int(os.getenv("ACCESS_HOURLY_LIMIT", "100"))
     app.config['ACCESS_TERMS_VERSION'] = os.getenv("ACCESS_TERMS_VERSION", "2026-09")
     app.config['RESEND_API_KEY'] = os.getenv("RESEND_API_KEY", "")
@@ -160,7 +159,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     session["access_grant_id"] = grant_id
                 session.permanent = True
                 return redirect(next_url)
-            error = "访问码不正确或已过期"
+            error = "访问码不正确或已失效"
         return render_template('login.html', error=error, next_url=next_url)
 
     @app.route('/request-access', methods=['GET', 'POST'])
@@ -210,7 +209,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                             app.config['ACCESS_CODE_SECRET'],
                             email,
                             app.config['ACCESS_TERMS_VERSION'],
-                            app.config['ACCESS_CODE_TTL_DAYS'],
                             hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
                         )
                     except AccessRequestLimitError:
@@ -220,17 +218,15 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                             error="访问申请较多，请稍后再试。",
                             submitted=False,
                             unavailable=False,
-                            ttl_days=app.config['ACCESS_CODE_TTL_DAYS'],
                         ), 429
                     if grant is not None:
-                        grant_id, code, expires_at = grant
+                        grant_id, code = grant
                         try:
                             send_access_code(
                                 app.config['RESEND_API_KEY'],
                                 app.config['ACCESS_FROM_EMAIL'],
                                 email,
                                 code,
-                                expires_at,
                                 grant_id,
                                 app.config['PUBLIC_BASE_URL'],
                             )
@@ -249,7 +245,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             error=error,
             submitted=submitted,
             unavailable=False,
-            ttl_days=app.config['ACCESS_CODE_TTL_DAYS'],
             turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
         )
 
@@ -269,7 +264,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             csrf_token = secrets.token_urlsafe(24)
             session["account_csrf"] = csrf_token
 
-        email, expires_at = grant
+        email = grant
         error = None
         message = None
         if request.method == 'POST':
@@ -281,26 +276,22 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     app.config['ACCESS_DATABASE_PATH'],
                     app.config['ACCESS_CODE_SECRET'],
                     grant_id,
-                    app.config['ACCESS_CODE_TTL_DAYS'],
                 )
                 if rotated is None:
                     session.clear()
                     return redirect(url_for("login"))
                 else:
-                    new_code, expires_at = rotated
+                    new_code = rotated
                     refreshed_grant = get_access_grant(
                         app.config['ACCESS_DATABASE_PATH'], grant_id
                     )
                     if refreshed_grant is None:
                         session.clear()
                         return redirect(url_for("login"))
-                    email = refreshed_grant[0]
+                    email = refreshed_grant
                     return render_template(
                         'account.html',
                         account_email=email,
-                        expiration=datetime.fromtimestamp(
-                            expires_at, timezone.utc
-                        ).strftime("%Y-%m-%d"),
                         csrf_token=csrf_token,
                         new_access_code=new_code,
                         error=None,
@@ -319,13 +310,9 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     email = new_email
                     message = "邮箱已更新。"
 
-        expiration = datetime.fromtimestamp(expires_at, timezone.utc).strftime(
-            "%Y-%m-%d"
-        )
         return render_template(
             'account.html',
             account_email=email,
-            expiration=expiration,
             csrf_token=csrf_token,
             error=error,
             message=message,

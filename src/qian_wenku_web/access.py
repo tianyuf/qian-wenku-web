@@ -42,21 +42,58 @@ def initialize_access_database(path: str) -> None:
     """Create the independent, writable access-grant store."""
     db_path = Path(path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS access_grants (
+    with sqlite3.connect(db_path, timeout=10) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'access_grants'"
+        ).fetchone()
+        if table_exists:
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(access_grants)")
+            }
+            if "expires_at" in columns:
+                connection.execute("DROP INDEX IF EXISTS access_grants_email_idx")
+                connection.execute(
+                    """
+                    CREATE TABLE access_grants_without_expiration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email TEXT NOT NULL,
+                        code_hash BLOB NOT NULL UNIQUE,
+                        terms_version TEXT NOT NULL,
+                        requested_at INTEGER NOT NULL,
+                        revoked_at INTEGER,
+                        last_used_at INTEGER
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO access_grants_without_expiration
+                        (id, email, code_hash, terms_version, requested_at,
+                         revoked_at, last_used_at)
+                    SELECT id, email, code_hash, terms_version, requested_at,
+                           revoked_at, last_used_at
+                    FROM access_grants
+                    """
+                )
+                connection.execute("DROP TABLE access_grants")
+                connection.execute(
+                    "ALTER TABLE access_grants_without_expiration RENAME TO access_grants"
+                )
+        else:
+            connection.execute(
+                """
+                CREATE TABLE access_grants (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL,
                 code_hash BLOB NOT NULL UNIQUE,
                 terms_version TEXT NOT NULL,
                 requested_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL,
                 revoked_at INTEGER,
                 last_used_at INTEGER
+                )
+                """
             )
-            """
-        )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS access_grants_email_idx "
             "ON access_grants(email, requested_at)"
@@ -77,13 +114,11 @@ def issue_access_grant(
     secret: str,
     email: str,
     terms_version: str,
-    ttl_days: int,
     cooldown_seconds: int = 900,
     hourly_limit: int = 100,
-) -> tuple[int, str, int] | None:
+) -> tuple[int, str] | None:
     """Issue a grant, or return None when the email is in cooldown."""
     now = int(time.time())
-    expires_at = now + ttl_days * 86400
 
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -110,12 +145,12 @@ def issue_access_grant(
                 cursor = connection.execute(
                     """
                     INSERT INTO access_grants
-                        (email, code_hash, terms_version, requested_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?)
+                        (email, code_hash, terms_version, requested_at)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (email, _code_hash(secret, code), terms_version, now, expires_at),
+                    (email, _code_hash(secret, code), terms_version, now),
                 )
-                return cursor.lastrowid, code, expires_at
+                return cursor.lastrowid, code
             except sqlite3.IntegrityError:
                 continue
 
@@ -140,9 +175,9 @@ def verify_access_code(
         row = connection.execute(
             """
             SELECT id FROM access_grants
-            WHERE code_hash = ? AND expires_at > ? AND revoked_at IS NULL
+            WHERE code_hash = ? AND revoked_at IS NULL
             """,
-            (digest, now),
+            (digest,),
         ).fetchone()
         if not row:
             return None
@@ -161,24 +196,24 @@ def is_access_grant_active(path: str, grant_id: int) -> bool:
         row = connection.execute(
             """
             SELECT 1 FROM access_grants
-            WHERE id = ? AND expires_at > ? AND revoked_at IS NULL
+            WHERE id = ? AND revoked_at IS NULL
             """,
-            (grant_id, int(time.time())),
+            (grant_id,),
         ).fetchone()
     return row is not None
 
 
-def get_access_grant(path: str, grant_id: int) -> tuple[str, int] | None:
-    """Return the email and expiration for an active grant."""
+def get_access_grant(path: str, grant_id: int) -> str | None:
+    """Return the email for an active grant."""
     with _read_only_connection(path) as connection:
         row = connection.execute(
             """
-            SELECT email, expires_at FROM access_grants
-            WHERE id = ? AND expires_at > ? AND revoked_at IS NULL
+            SELECT email FROM access_grants
+            WHERE id = ? AND revoked_at IS NULL
             """,
-            (grant_id, int(time.time())),
+            (grant_id,),
         ).fetchone()
-    return (str(row[0]), int(row[1])) if row else None
+    return str(row[0]) if row else None
 
 
 def update_access_grant_email(path: str, grant_id: int, email: str) -> bool:
@@ -187,9 +222,9 @@ def update_access_grant_email(path: str, grant_id: int, email: str) -> bool:
         cursor = connection.execute(
             """
             UPDATE access_grants SET email = ?
-            WHERE id = ? AND expires_at > ? AND revoked_at IS NULL
+            WHERE id = ? AND revoked_at IS NULL
             """,
-            (email, grant_id, int(time.time())),
+            (email, grant_id),
         )
     return cursor.rowcount == 1
 
@@ -198,22 +233,20 @@ def rotate_access_code(
     path: str,
     secret: str,
     grant_id: int,
-    ttl_days: int,
-) -> tuple[str, int] | None:
+) -> str | None:
     """Revoke this grant's code and all sibling codes for the same email,
     then issue a single fresh code on this grant row. The new plaintext code
     is returned once; only its hash is stored."""
     now = int(time.time())
-    expires_at = now + ttl_days * 86400
 
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
             """
             SELECT email FROM access_grants
-            WHERE id = ? AND expires_at > ? AND revoked_at IS NULL
+            WHERE id = ? AND revoked_at IS NULL
             """,
-            (grant_id, now),
+            (grant_id,),
         ).fetchone()
         if not row:
             return None
@@ -221,9 +254,9 @@ def rotate_access_code(
         connection.execute(
             """
             UPDATE access_grants SET revoked_at = ?
-            WHERE email = ? AND revoked_at IS NULL AND expires_at > ?
+            WHERE email = ? AND revoked_at IS NULL
             """,
-            (now, email, now),
+            (now, email),
         )
         for _ in range(3):
             code = "qx_" + secrets.token_urlsafe(24)
@@ -231,14 +264,14 @@ def rotate_access_code(
                 cursor = connection.execute(
                     """
                     UPDATE access_grants
-                    SET code_hash = ?, expires_at = ?, requested_at = ?,
+                    SET code_hash = ?, requested_at = ?,
                         revoked_at = NULL, last_used_at = NULL
                     WHERE id = ?
                     """,
-                    (_code_hash(secret, code), expires_at, now, grant_id),
+                    (_code_hash(secret, code), now, grant_id),
                 )
                 if cursor.rowcount == 1:
-                    return code, expires_at
+                    return code
             except sqlite3.IntegrityError:
                 continue
 
@@ -321,12 +354,10 @@ def send_access_code(
     sender: str,
     recipient: str,
     code: str,
-    expires_at: int,
     grant_id: int,
     base_url: str,
 ) -> None:
     """Send an issued code through Resend's HTTPS API."""
-    expiration = time.strftime("%B %d, %Y", time.gmtime(expires_at))
     login_url = f"{base_url.rstrip('/')}/login"
     safe_code = html.escape(code)
     payload = {
@@ -337,14 +368,14 @@ def send_access_code(
             "Your Qian Xuesen Archive access code is:\n\n"
             f"{code}\n\n"
             f"Log in at {login_url}\n\n"
-            f"This code expires on {expiration}. It also works as your MCP "
+            "This code does not expire. It also works as your MCP "
             "bearer token. Do not share it."
         ),
         "html": (
             "<p>Your Qian Xuesen Archive access code is:</p>"
             f"<p><code>{safe_code}</code></p>"
             f'<p><a href="{html.escape(login_url)}">Log in to the archive</a></p>'
-            f"<p>This code expires on {expiration}. It also works as your MCP "
+            "<p>This code does not expire. It also works as your MCP "
             "bearer token. Do not share it.</p>"
         ),
     }

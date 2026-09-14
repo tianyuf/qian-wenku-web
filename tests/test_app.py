@@ -89,7 +89,7 @@ def test_beta_login_flow(artifact_dir, monkeypatch):
         "/login", data={"passphrase": "wrong", "next": "/browse"}
     )
     assert wrong.status_code == 200
-    assert "访问码不正确或已过期" in wrong.get_data(as_text=True)
+    assert "访问码不正确或已失效" in wrong.get_data(as_text=True)
     assert 'lang="zh-CN"' in wrong.get_data(as_text=True)
     assert "Request access" not in wrong.get_data(as_text=True)
 
@@ -203,7 +203,7 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     account_page = access_client.get("/account")
     assert account_page.status_code == 200
     assert "Researcher@example.com" in account_page.get_data(as_text=True)
-    assert "访问有效期至" in account_page.get_data(as_text=True)
+    assert "长期有效" in account_page.get_data(as_text=True)
     with access_client.session_transaction() as account_session:
         account_csrf = account_session["account_csrf"]
 

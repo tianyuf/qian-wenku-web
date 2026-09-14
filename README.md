@@ -26,7 +26,7 @@ A read-only web application for exploring archival materials pertaining to the C
 
 ## 📬 Access
 
-Request an individual 90-day access code at <https://wenku.qianxuesen.org/request-access>.
+Request an individual non-expiring access code at <https://wenku.qianxuesen.org/request-access>.
 
 ## ⚖️ Licensing
 
@@ -85,7 +85,7 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | `BETA_PASSPHRASE` | Optional operator fallback credential; access control is also enabled when `ACCESS_DATABASE_PATH` is set |
 | `SECRET_KEY` / `SESSION_COOKIE_SECURE` | Session signing key and secure-cookie switch; required when access control is enabled |
 | `ACCESS_DATABASE_PATH` / `ACCESS_CODE_SECRET` | Writable grant database and secret used to hash individual access codes |
-| `ACCESS_CODE_TTL_DAYS` / `ACCESS_HOURLY_LIMIT` | Grant lifetime and global issuance ceiling |
+| `ACCESS_HOURLY_LIMIT` | Global access-code issuance ceiling |
 | `ACCESS_TERMS_VERSION` | Accepted archive-use terms version stored with each grant |
 | `RESEND_API_KEY` / `ACCESS_FROM_EMAIL` | Resend credentials for automatic code delivery; keep the API key out of source control |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile credentials required for the public request form |
@@ -98,7 +98,7 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | Route | Purpose |
 |---|---|
 | `/`, `/search/results` | Search UI and HTMX results |
-| `/login`, `/request-access` | Access-code login and automatic 90-day grant requests |
+| `/login`, `/request-access` | Access-code login and automatic non-expiring grant requests |
 | `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
 | `/e/<permalink>` | Canonical entry page |
 | `/browse/recipients`, `/browse/entities` | Relationship directories |
