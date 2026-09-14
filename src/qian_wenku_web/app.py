@@ -313,8 +313,14 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.context_processor
     def inject_asset_config():
+        static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+        try:
+            style_version = int(os.path.getmtime(os.path.join(static_dir, "style.css")))
+        except OSError:
+            style_version = 0
         return {
             "r2_cdn_url": app.config["R2_CDN_URL"],
+            "style_version": style_version,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
             "access_requests_enabled": bool(
