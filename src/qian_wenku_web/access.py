@@ -446,6 +446,81 @@ def get_pending_email(path: str, grant_id: int) -> str | None:
     return str(row[0]) if row and row[0] is not None else None
 
 
+def initialize_favorites(path: str) -> None:
+    """Create the favorites table inside the access-grant store."""
+    with sqlite3.connect(path, timeout=10) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS favorites (
+                grant_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (grant_id, entry_id)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS favorites_grant_idx "
+            "ON favorites(grant_id, created_at DESC)"
+        )
+
+
+def toggle_favorite(path: str, grant_id: int, entry_id: int) -> bool:
+    """Toggle one entry for one account. Returns True when now favorited."""
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        active = connection.execute(
+            "SELECT 1 FROM access_grants WHERE id = ? AND revoked_at IS NULL",
+            (grant_id,),
+        ).fetchone()
+        if not active:
+            return False
+        existing = connection.execute(
+            "SELECT 1 FROM favorites WHERE grant_id = ? AND entry_id = ?",
+            (grant_id, entry_id),
+        ).fetchone()
+        if existing:
+            connection.execute(
+                "DELETE FROM favorites WHERE grant_id = ? AND entry_id = ?",
+                (grant_id, entry_id),
+            )
+            return False
+        connection.execute(
+            "INSERT INTO favorites (grant_id, entry_id, created_at) VALUES (?, ?, ?)",
+            (grant_id, entry_id, now),
+        )
+        return True
+
+
+def list_favorites(path: str, grant_id: int, limit: int = 200) -> list[dict[str, object]]:
+    """List an account's favorites, newest first."""
+    with _read_only_connection(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT entry_id, created_at FROM favorites
+            WHERE grant_id = ?
+            ORDER BY created_at DESC, entry_id DESC
+            LIMIT ?
+            """,
+            (grant_id, limit),
+        ).fetchall()
+    return [
+        {"entry_id": int(row[0]), "created_at": int(row[1])}
+        for row in rows
+    ]
+
+
+def is_favorite(path: str, grant_id: int, entry_id: int) -> bool:
+    """Return whether one account has favorited one entry."""
+    with _read_only_connection(path) as connection:
+        row = connection.execute(
+            "SELECT 1 FROM favorites WHERE grant_id = ? AND entry_id = ?",
+            (grant_id, entry_id),
+        ).fetchone()
+    return row is not None
+
+
 def create_mcp_token(
     path: str,
     secret: str,

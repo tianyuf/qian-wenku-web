@@ -219,6 +219,14 @@
                 第 {{ entry.start_page }} 页
             {% endif %}
         </span>
+        {% if individual_account %}
+        <button class="btn btn-sm {% if favorited %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                id="favorite-btn" data-entry-id="{{ entry.id }}"
+                data-favorited="{{ '1' if favorited else '0' }}"
+                onclick="toggleFavorite(this)">
+            {{ '★ 已收藏' if favorited else '☆ 收藏' }}
+        </button>
+        {% endif %}
         <button class="btn btn-sm btn-outline-secondary"
                 onclick='copyCitation({{ entry.citation|tojson }}, this)'>
             复制引用
@@ -274,6 +282,31 @@
 
 {% block extra_js %}
 <script>
+function toggleFavorite(btn) {
+    var entryId = btn.getAttribute('data-entry-id');
+    var wasFav = btn.getAttribute('data-favorited') === '1';
+    btn.disabled = true;
+    var body = new URLSearchParams({ entry_id: entryId });
+    fetch('/api/favorites', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'fetch'},
+        body: body.toString()
+    }).then(function(r) {
+        if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; }
+        return r.json();
+    }).then(function(data) {
+        if (!data) return;
+        var fav = !!data.favorited;
+        btn.setAttribute('data-favorited', fav ? '1' : '0');
+        btn.textContent = fav ? '★ 已收藏' : '☆ 收藏';
+        btn.classList.toggle('btn-primary', fav);
+        btn.classList.toggle('btn-outline-secondary', !fav);
+    }).catch(function() {
+        // keep prior state on failure
+    }).finally(function() {
+        btn.disabled = false;
+    });
+}
 // Only reload PDF if not already loaded server-side
 (function() {
     var img = document.querySelector('#pdf-viewer img');

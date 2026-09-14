@@ -20,6 +20,7 @@ from flask import (
 )
 
 from .database import NianpuDatabase
+from .formatting import format_date_chinese
 from .access import (
     AccessRequestLimitError,
     EmailDeliveryError,
@@ -33,9 +34,11 @@ from .access import (
     get_access_grant,
     get_pending_email,
     initialize_access_database,
+    initialize_favorites,
     is_access_grant_active,
     issue_magic_link,
     list_all_accounts,
+    list_favorites,
     list_mcp_tokens,
     normalize_email,
     reinstate_account,
@@ -45,6 +48,7 @@ from .access import (
     send_email_change_link,
     send_magic_link,
     send_token_revoked_notice,
+    toggle_favorite,
     verify_turnstile,
 )
 
@@ -105,6 +109,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         raise RuntimeError("ACCESS_CODE_SECRET is required for login and MCP tokens")
     if app.config['ACCESS_DATABASE_PATH']:
         initialize_access_database(app.config['ACCESS_DATABASE_PATH'])
+        initialize_favorites(app.config['ACCESS_DATABASE_PATH'])
     auth_enabled = bool(
         app.config['ACCESS_DATABASE_PATH'] or app.config['WENKU_SERVICE_TOKEN']
     )
@@ -406,6 +411,38 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     int(mcp_token["last_used_at"]), timezone.utc
                 ).strftime("%Y-%m-%d")
 
+        # Favorites with entry metadata for display.
+        favorites = []
+        with NianpuDatabase(app.config['DATABASE_PATH']) as fav_db:
+            for fav in list_favorites(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                try:
+                    row = fav_db.conn.execute(
+                        """
+                        SELECT e.permalink, e.title, e.date_iso, e.date_precision,
+                               e.content_type, e.start_page,
+                               s.title AS source_title
+                        FROM entries e
+                        JOIN sources s ON e.source_id = s.id
+                        WHERE e.id = ?
+                        """,
+                        (fav["entry_id"],),
+                    ).fetchone()
+                except Exception:
+                    app.logger.exception("Favorite lookup failed")
+                    row = None
+                if row is None:
+                    continue
+                favorites.append({
+                    "entry_id": fav["entry_id"],
+                    "permalink": row["permalink"],
+                    "title": row["title"]
+                        or format_date_chinese(row["date_iso"], row["date_precision"]),
+                    "date_display": format_date_chinese(row["date_iso"], row["date_precision"]),
+                    "content_type": row["content_type"] or "nianpu",
+                    "source_title": row["source_title"],
+                    "start_page": row["start_page"],
+                })
+
         return render_template(
             'account.html',
             account_email=email,
@@ -415,6 +452,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             message=message,
             mcp_tokens=mcp_tokens,
             new_mcp_token=new_mcp_token,
+            favorites=favorites,
         )
 
     @app.route('/account/email-change')
@@ -582,6 +620,20 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         if request.path.startswith('/api/'):
             return jsonify({"error": "Not found"}), 404
         return render_template('404.html'), 404
+
+    @app.route('/api/favorites', methods=['POST'])
+    def favorite_toggle():
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return jsonify({"error": "Authentication required"}), 401
+        try:
+            entry_id = int(request.form.get("entry_id", ""))
+        except ValueError:
+            return jsonify({"error": "Invalid entry"}), 400
+        favorited = toggle_favorite(
+            app.config['ACCESS_DATABASE_PATH'], grant_id, entry_id
+        )
+        return jsonify({"favorited": favorited})
 
     @app.errorhandler(500)
     def internal_error(error):

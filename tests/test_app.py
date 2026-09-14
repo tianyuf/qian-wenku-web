@@ -569,3 +569,60 @@ def test_email_change_flow(artifact_dir, tmp_path, monkeypatch):
     reused = client.get(f"/account/email-change?token={token}")
     assert reused.status_code == 200
     assert "登录" in reused.get_data(as_text=True)
+
+
+def test_favorites_flow(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Reader@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = 1
+        session.permanent = True
+
+    # Entry 1 renders with favorite controls for account sessions.
+    entry_page = client.get("/e/nianpu-19111211-a")
+    assert 'data-entry-id="1"' in entry_page.get_data(as_text=True)
+
+    # Not logged in: no star button, API rejects.
+    anon = app.test_client()
+    assert 'id="favorite-btn"' not in anon.get("/e/nianpu-19111211-a").get_data(as_text=True)
+    assert anon.post("/api/favorites", data={"entry_id": "1"}).status_code == 401
+
+    first = client.post("/api/favorites", data={"entry_id": "1"})
+    assert first.get_json() == {"favorited": True}
+    second = client.post("/api/favorites", data={"entry_id": "1"})
+    assert second.get_json() == {"favorited": False}
+
+    # Toggle on again and check account listing.
+    assert client.post("/api/favorites", data={"entry_id": "1"}).get_json() == {"favorited": True}
+    entry_page = client.get("/e/nianpu-19111211-a")
+    entry_text = entry_page.get_data(as_text=True)
+    assert 'data-favorited="1"' in entry_text
+    assert "★ 已收藏" in entry_text
+
+    account_page = client.get("/account")
+    account_text = account_page.get_data(as_text=True)
+    assert "收藏" in account_text
+    assert "/e/nianpu-19111211-a" in account_text

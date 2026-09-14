@@ -81,6 +81,28 @@
             </form>
         </section>
 
+        <section class="account-section" aria-labelledby="favorites-title">
+            <h2 id="favorites-title">收藏</h2>
+            {% if favorites %}
+            <div class="favorites-list">
+                {% for fav in favorites %}
+                <div class="favorite-row">
+                    <div>
+                        <a href="{{ url_for('views.entry_permalink', permalink=fav.permalink) }}">{{ fav.title }}</a>
+                        <span>{{ fav.source_title }} · {{ fav.date_display }} · 第 {{ fav.start_page }} 页</span>
+                    </div>
+                    <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-remove-form">
+                        <input type="hidden" name="entry_id" value="{{ fav.entry_id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">移除</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted small">暂无收藏。在条目页面点击“☆ 收藏”即可添加。</p>
+            {% endif %}
+        </section>
+
         <section class="account-section" aria-labelledby="email-title">
             <h2 id="email-title">更换登录邮箱</h2>
             {% if pending_email %}
@@ -112,6 +134,21 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+document.querySelectorAll('.favorite-remove-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var body = new URLSearchParams(new FormData(form));
+        fetch('/api/favorites', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        }).then(function() {
+            window.location.reload();
+        });
+    });
+});
+</script>
 <script>
 function copyMcpToken(btn) {
     var input = document.getElementById('new-mcp-token');

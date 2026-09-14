@@ -1242,6 +1242,40 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     margin-top: 1rem;
 }
 
+.favorites-list {
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.favorite-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.favorite-row > div {
+    min-width: 0;
+}
+
+.favorite-row a {
+    display: block;
+    font-weight: 600;
+    font-size: 0.88rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.favorite-row span {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
 .admin-view {
     flex: 1;
     overflow-y: auto;

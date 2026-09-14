@@ -15,6 +15,21 @@ from .formatting import add_pdf_page_fields, clamp_int, format_date_chinese
 views_bp = Blueprint('views', __name__, template_folder='templates')
 
 
+def _entry_is_favorited(entry_id):
+    """Return whether the current session's account favorited an entry."""
+    from flask import session
+    from .access import is_favorite
+    access_db_path = current_app.config.get('ACCESS_DATABASE_PATH', '')
+    grant_id = session.get("access_grant_id")
+    if grant_id is None or not access_db_path:
+        return False
+    try:
+        return is_favorite(access_db_path, grant_id, entry_id)
+    except Exception:
+        current_app.logger.exception("Favorite state check failed")
+        return False
+
+
 @contextmanager
 def get_db():
     """Context manager for database connections."""
@@ -889,7 +904,8 @@ def _render_entry_detail(entry_id):
                            entity_related=entity_related,
                            recipients=recipients,
                            duplicates=duplicates,
-                           own_entities=own_entities)
+                           own_entities=own_entities,
+                           favorited=_entry_is_favorited(entry_id))
 
 
 @views_bp.route('/browse/recipients')
