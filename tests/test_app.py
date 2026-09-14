@@ -804,3 +804,17 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
     )
     assert forwarded.status_code == 200
     assert forwarded.get_json()["total"] >= 1
+
+
+def test_numeric_permalink_redirects_to_canonical(client, artifact_dir):
+    # /e/<entry-id> is a legacy reference pattern; it 301s to the hash permalink.
+    response = client.get("/e/1")
+    assert response.status_code == 301
+    assert response.headers["Location"].endswith("/e/nianpu-19111211-a")
+
+    # Valid hash permalinks still render directly.
+    assert client.get("/e/nianpu-19111211-a").status_code == 200
+
+    # Unknown permalinks still 404.
+    assert client.get("/e/nonexistent-permalink").status_code == 404
+    assert client.get("/e/999999").status_code == 404

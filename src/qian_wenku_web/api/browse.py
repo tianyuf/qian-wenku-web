@@ -167,9 +167,10 @@ def entry_detail(entry_id):
             pdf_end = pdf_pages[-1] if pdf_pages else entry["end_page"]
 
             prev_cursor = db.conn.execute("""
-                SELECT id, date_iso, date_display, content_clean
+                SELECT id, permalink, date_iso, date_display, content_clean
                 FROM (
                     SELECT e.id,
+                           e.permalink,
                            e.date_iso,
                            CASE
                                WHEN e.date_precision = 'year' THEN e.date_iso || '年'
@@ -187,9 +188,10 @@ def entry_detail(entry_id):
             prev_row = prev_cursor.fetchone()
 
             next_cursor = db.conn.execute("""
-                SELECT id, date_iso, date_display, content_clean
+                SELECT id, permalink, date_iso, date_display, content_clean
                 FROM (
                     SELECT e.id,
+                           e.permalink,
                            e.date_iso,
                            CASE
                                WHEN e.date_precision = 'year' THEN e.date_iso || '年'
@@ -209,7 +211,7 @@ def entry_detail(entry_id):
             same_day = []
             if entry["date_iso"] and len(entry["date_iso"]) >= 10:
                 same_cursor = db.conn.execute("""
-                    SELECT e.id, e.date_original, substr(e.content_clean, 1, 100) || '...' as content_clean,
+                    SELECT e.id, e.permalink, e.date_original, substr(e.content_clean, 1, 100) || '...' as content_clean,
                            s.title as source_title
                     FROM entries e
                     JOIN sources s ON e.source_id = s.id

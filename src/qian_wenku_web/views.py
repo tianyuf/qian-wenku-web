@@ -698,10 +698,23 @@ def entry_detail(entry_id):
 
 @views_bp.route('/e/<permalink>')
 def entry_permalink(permalink):
-    """Canonical entry URL."""
+    """Canonical entry URL. Purely numeric paths (e.g. /e/29481) are legacy
+    entry-id references — 301 to the canonical content-hash permalink."""
     with get_db() as db:
         row = db.conn.execute(
             "SELECT id FROM entries WHERE permalink = ?", (permalink,)).fetchone()
+        if not row and permalink.isdigit():
+            row = db.conn.execute(
+                "SELECT id FROM entries WHERE id = ?", (int(permalink),)
+            ).fetchone()
+            if row:
+                canonical = db.conn.execute(
+                    "SELECT permalink FROM entries WHERE id = ?", (row["id"],)
+                ).fetchone()
+                return redirect(
+                    url_for('views.entry_permalink', permalink=canonical["permalink"]),
+                    code=301
+                )
     if not row:
         return render_template('404.html'), 404
     return _render_entry_detail(row["id"])

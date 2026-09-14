@@ -163,10 +163,26 @@ def _enrich_search_results(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _enrich_navigation(payload: dict[str, Any]) -> None:
+    """Attach permalink_url to prev/next/same_day entries so agents can
+    cite them directly instead of guessing URLs from entry ids."""
+    navigation = payload.get("navigation")
+    if not isinstance(navigation, dict):
+        return
+    for key in ("prev", "next"):
+        neighbor = navigation.get(key)
+        if isinstance(neighbor, dict) and neighbor.get("permalink"):
+            neighbor["permalink_url"] = _permalink_url(neighbor["permalink"])
+    for neighbor in navigation.get("same_day") or []:
+        if isinstance(neighbor, dict) and neighbor.get("permalink"):
+            neighbor["permalink_url"] = _permalink_url(neighbor["permalink"])
+
+
 def _enrich_entry_payload(payload: dict[str, Any]) -> dict[str, Any]:
     entry = payload.get("entry")
     if isinstance(entry, dict):
         _enrich_entry(entry)
+    _enrich_navigation(payload)
     return payload
 
 
