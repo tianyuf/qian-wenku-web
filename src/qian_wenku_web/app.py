@@ -5,7 +5,7 @@ import os
 import logging
 import hmac
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from flask import (
@@ -23,15 +23,17 @@ from .access import (
     AccessRequestLimitError,
     EmailDeliveryError,
     access_database_is_healthy,
+    consume_magic_link,
+    create_mcp_token,
+    delete_magic_link,
     get_access_grant,
     initialize_access_database,
     is_access_grant_active,
-    issue_access_grant,
+    issue_magic_link,
+    list_mcp_tokens,
     normalize_email,
-    rotate_access_code,
-    send_access_code,
-    update_access_grant_email,
-    verify_access_code,
+    revoke_mcp_token,
+    send_magic_link,
     verify_turnstile,
 )
 
@@ -84,11 +86,19 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     )
     if app.config['ACCESS_DATABASE_PATH'] and not app.config['ACCESS_CODE_SECRET']:
-        raise RuntimeError("ACCESS_CODE_SECRET is required for individual access codes")
+        raise RuntimeError("ACCESS_CODE_SECRET is required for login and MCP tokens")
     if app.config['ACCESS_DATABASE_PATH']:
         initialize_access_database(app.config['ACCESS_DATABASE_PATH'])
     auth_enabled = bool(
         app.config['BETA_PASSPHRASE'] or app.config['ACCESS_DATABASE_PATH']
+    )
+    magic_login_enabled = bool(
+        app.config['ACCESS_DATABASE_PATH']
+        and app.config['RESEND_API_KEY']
+        and app.config['ACCESS_FROM_EMAIL']
+        and app.config['TURNSTILE_SITE_KEY']
+        and app.config['TURNSTILE_SECRET_KEY']
+        and app.config['TURNSTILE_HOSTNAMES']
     )
     if auth_enabled and not app.config['SECRET_KEY']:
         raise RuntimeError("SECRET_KEY is required when access control is enabled")
@@ -133,34 +143,116 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             return jsonify({"error": "Authentication required"}), 401
         return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
+    @app.after_request
+    def protect_login_tokens(response):
+        if request.path == "/login":
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if not auth_enabled:
             return redirect(url_for("views.index"))
         error = None
+        submitted = False
         next_url = safe_next_url(request.values.get("next"))
+        csrf_token = session.get("login_csrf")
+        if not csrf_token:
+            csrf_token = secrets.token_urlsafe(24)
+            session["login_csrf"] = csrf_token
         if request.method == 'POST':
-            supplied = request.form.get("passphrase", "")
-            grant_id = None
-            if app.config['ACCESS_DATABASE_PATH']:
-                grant_id = verify_access_code(
-                    app.config['ACCESS_DATABASE_PATH'],
-                    app.config['ACCESS_CODE_SECRET'],
-                    supplied,
-                    mark_used=True,
+            if request.form.get("action") == "consume_magic_link":
+                if not app.config['ACCESS_DATABASE_PATH']:
+                    error = "邮件登录暂时不可用。"
+                elif not hmac.compare_digest(
+                    request.form.get("csrf_token", "").encode(), csrf_token.encode()
+                ):
+                    error = "请刷新页面后重试。"
+                else:
+                    consumed = consume_magic_link(
+                        app.config['ACCESS_DATABASE_PATH'],
+                        app.config['ACCESS_CODE_SECRET'],
+                        request.form.get("token", ""),
+                    )
+                    if consumed is not None:
+                        grant_id, stored_next_url = consumed
+                        session.clear()
+                        session["beta_authenticated"] = True
+                        session["access_grant_id"] = grant_id
+                        session.permanent = True
+                        return redirect(safe_next_url(stored_next_url))
+                    error = "登录链接无效、已使用或已过期。请重新获取。"
+            elif "passphrase" in request.form:
+                supplied = request.form.get("passphrase", "")
+                fallback_valid = bool(app.config['BETA_PASSPHRASE']) and hmac.compare_digest(
+                    supplied.encode(), app.config['BETA_PASSPHRASE'].encode()
                 )
-            fallback_valid = bool(app.config['BETA_PASSPHRASE']) and hmac.compare_digest(
-                supplied.encode(), app.config['BETA_PASSPHRASE'].encode()
-            )
-            if grant_id is not None or fallback_valid:
-                session.clear()
-                session["beta_authenticated"] = True
-                if grant_id is not None:
-                    session["access_grant_id"] = grant_id
-                session.permanent = True
-                return redirect(next_url)
-            error = "访问码不正确或已失效"
-        return render_template('login.html', error=error, next_url=next_url)
+                if fallback_valid:
+                    session.clear()
+                    session["beta_authenticated"] = True
+                    session.permanent = True
+                    return redirect(next_url)
+                error = "管理员口令不正确。"
+            elif not magic_login_enabled:
+                error = "邮件登录暂时不可用。"
+            elif not hmac.compare_digest(
+                request.form.get("csrf_token", "").encode(), csrf_token.encode()
+            ):
+                error = "请刷新页面后重试。"
+            elif request.form.get("website"):
+                submitted = True
+            elif not verify_turnstile(
+                app.config['TURNSTILE_SECRET_KEY'],
+                request.form.get("cf-turnstile-response", ""),
+                request.headers.get("CF-Connecting-IP", request.remote_addr),
+                "login",
+                app.config['TURNSTILE_HOSTNAMES'],
+            ):
+                error = "请完成人机验证后重试。"
+            else:
+                email = normalize_email(request.form.get("email", ""))
+                if not email:
+                    error = "请输入有效的邮箱地址。"
+                else:
+                    try:
+                        link = issue_magic_link(
+                            app.config['ACCESS_DATABASE_PATH'],
+                            app.config['ACCESS_CODE_SECRET'],
+                            email,
+                            next_url,
+                            hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
+                        )
+                    except AccessRequestLimitError:
+                        error = "登录请求较多，请稍后再试。"
+                    else:
+                        if link is not None:
+                            link_id, login_token = link
+                            try:
+                                send_magic_link(
+                                    app.config['RESEND_API_KEY'],
+                                    app.config['ACCESS_FROM_EMAIL'],
+                                    email,
+                                    login_token,
+                                    link_id,
+                                    app.config['PUBLIC_BASE_URL'],
+                                )
+                            except EmailDeliveryError:
+                                delete_magic_link(
+                                    app.config['ACCESS_DATABASE_PATH'], link_id
+                                )
+                                app.logger.exception("Magic-link delivery failed")
+                        submitted = True
+        return render_template(
+            'login.html',
+            error=error,
+            submitted=submitted,
+            next_url=next_url,
+            csrf_token=csrf_token,
+            magic_login_enabled=magic_login_enabled,
+            operator_login_enabled=bool(app.config['BETA_PASSPHRASE']),
+            turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
+        )
 
     @app.route('/request-access', methods=['GET', 'POST'])
     def request_access():
@@ -204,11 +296,13 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     error = "请输入有效的邮箱地址。"
                 else:
                     try:
-                        grant = issue_access_grant(
+                        link = issue_magic_link(
                             app.config['ACCESS_DATABASE_PATH'],
                             app.config['ACCESS_CODE_SECRET'],
                             email,
-                            app.config['ACCESS_TERMS_VERSION'],
+                            url_for("views.index"),
+                            terms_version=app.config['ACCESS_TERMS_VERSION'],
+                            create_account=True,
                             hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
                         )
                     except AccessRequestLimitError:
@@ -219,19 +313,22 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                             submitted=False,
                             unavailable=False,
                         ), 429
-                    if grant is not None:
-                        grant_id, code = grant
+                    if link is not None:
+                        link_id, login_token = link
                         try:
-                            send_access_code(
+                            send_magic_link(
                                 app.config['RESEND_API_KEY'],
                                 app.config['ACCESS_FROM_EMAIL'],
                                 email,
-                                code,
-                                grant_id,
+                                login_token,
+                                link_id,
                                 app.config['PUBLIC_BASE_URL'],
                             )
                         except EmailDeliveryError:
-                            app.logger.exception("Access-code email delivery failed")
+                            delete_magic_link(
+                                app.config['ACCESS_DATABASE_PATH'], link_id
+                            )
+                            app.logger.exception("Magic-link delivery failed")
                             error = (
                                 "Delivery could not be confirmed. Check your email before "
                                 "trying again."
@@ -267,48 +364,52 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         email = grant
         error = None
         message = None
+        new_mcp_token = None
         if request.method == 'POST':
             supplied_csrf = request.form.get("csrf_token", "")
             if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
                 error = "请刷新页面后重试。"
-            elif request.form.get("action") == "rotate_code":
-                rotated = rotate_access_code(
-                    app.config['ACCESS_DATABASE_PATH'],
-                    app.config['ACCESS_CODE_SECRET'],
-                    grant_id,
-                )
-                if rotated is None:
-                    session.clear()
-                    return redirect(url_for("login"))
-                else:
-                    new_code = rotated
-                    refreshed_grant = get_access_grant(
-                        app.config['ACCESS_DATABASE_PATH'], grant_id
+            elif request.form.get("action") == "create_mcp_token":
+                token_name = request.form.get("token_name", "").strip()
+                try:
+                    created = create_mcp_token(
+                        app.config['ACCESS_DATABASE_PATH'],
+                        app.config['ACCESS_CODE_SECRET'],
+                        grant_id,
+                        token_name,
                     )
-                    if refreshed_grant is None:
+                except ValueError:
+                    error = "请输入 1 至 80 个字符的令牌名称。"
+                else:
+                    if created is None:
                         session.clear()
                         return redirect(url_for("login"))
-                    email = refreshed_grant
-                    return render_template(
-                        'account.html',
-                        account_email=email,
-                        csrf_token=csrf_token,
-                        new_access_code=new_code,
-                        error=None,
-                        message=None,
-                    )
-            else:
-                new_email = normalize_email(request.form.get("email", ""))
-                if not new_email:
-                    error = "请输入有效的邮箱地址。"
-                elif not update_access_grant_email(
-                    app.config['ACCESS_DATABASE_PATH'], grant_id, new_email
-                ):
-                    session.clear()
-                    return redirect(url_for("login"))
+                    _, new_mcp_token = created
+                    message = "MCP 令牌已创建。"
+            elif request.form.get("action") == "revoke_mcp_token":
+                try:
+                    token_id = int(request.form.get("token_id", ""))
+                except ValueError:
+                    error = "MCP 令牌无效。"
                 else:
-                    email = new_email
-                    message = "邮箱已更新。"
+                    if revoke_mcp_token(
+                        app.config['ACCESS_DATABASE_PATH'], grant_id, token_id
+                    ):
+                        message = "MCP 令牌已撤销。"
+                    else:
+                        error = "MCP 令牌不存在或已撤销。"
+            else:
+                error = "未知操作。"
+
+        mcp_tokens = list_mcp_tokens(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        for mcp_token in mcp_tokens:
+            mcp_token["created_date"] = datetime.fromtimestamp(
+                int(mcp_token["created_at"]), timezone.utc
+            ).strftime("%Y-%m-%d")
+            if mcp_token["last_used_at"] is not None:
+                mcp_token["last_used_date"] = datetime.fromtimestamp(
+                    int(mcp_token["last_used_at"]), timezone.utc
+                ).strftime("%Y-%m-%d")
 
         return render_template(
             'account.html',
@@ -316,6 +417,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             csrf_token=csrf_token,
             error=error,
             message=message,
+            mcp_tokens=mcp_tokens,
+            new_mcp_token=new_mcp_token,
         )
 
     @app.post('/logout')
@@ -341,6 +444,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "style_version": style_version,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
+            "magic_login_enabled": magic_login_enabled,
             "access_requests_enabled": bool(
                 app.config['ACCESS_DATABASE_PATH']
                 and app.config['RESEND_API_KEY']

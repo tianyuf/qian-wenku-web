@@ -1347,11 +1347,10 @@ over HTTPS.
 
 ## What you need
 
-Your **individual access code** for this site. It doubles as the bearer
-token the server expects. If you don't have one, request it at
-https://wenku.qianxuesen.org/request-access.
+Your **MCP token** for this site. Sign in at
+https://wenku.qianxuesen.org/login, then create one on the account page.
 
-Ask the user for that access code now if you don't already have it. Do
+Ask the user for that MCP token now if you don't already have it. Do
 NOT proceed with a placeholder.
 
 ## How to install
@@ -1375,13 +1374,13 @@ existing `mcp` entries. Merge in:
     "qian-wenku": {
       "type": "remote",
       "url": "https://wenku.qianxuesen.org/mcp/rpc",
-      "headers": { "Authorization": "Bearer USER_ACCESS_CODE" }
+      "headers": { "Authorization": "Bearer USER_MCP_TOKEN" }
     }
   }
 }
 ```
 
-Replace `USER_ACCESS_CODE` with the user's access code. Write the file
+Replace `USER_MCP_TOKEN` with the user's MCP token. Write the file
 back, preserving the user's `$schema` declaration and any comments.
 
 If `mcp.qian-wenku` already exists, stop and ask the user whether to
@@ -1397,7 +1396,7 @@ Tell the user to run:
 ```bash
 claude mcp add --transport http qian-wenku \\
   https://wenku.qianxuesen.org/mcp/rpc \\
-  --header "Authorization: Bearer USER_ACCESS_CODE"
+  --header "Authorization: Bearer USER_MCP_TOKEN"
 ```
 
 Scope to current project by default; `--scope user` for all projects.
@@ -1414,7 +1413,7 @@ Inside the existing `mcpServers` object, add:
 "qian-wenku": {
   "type": "http",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
-  "headers": { "Authorization": "Bearer USER_ACCESS_CODE" }
+  "headers": { "Authorization": "Bearer USER_MCP_TOKEN" }
 }
 ```
 
@@ -1426,18 +1425,18 @@ Any client that supports remote HTTP MCP servers with a static
 Authorization header works. The two things to wire up are always:
 
 - **URL**: `https://wenku.qianxuesen.org/mcp/rpc`
-- **Header**: `Authorization: Bearer USER_ACCESS_CODE`
+- **Header**: `Authorization: Bearer USER_MCP_TOKEN`
 
 ## Verify it worked
 
 After the user reloads their client, ask them to type something like:
 "List the sources in qian-wenku" or "Search qian-wenku for 钱学森 in 1956".
 The tool call should return real data, not an error. If it fails, have them
-confirm the access code works on the website login and try again.
+confirm the MCP token is active on the account page and try again.
 
 ## Privacy note
 
-The access code gives read access to the same corpus the website exposes.
+The MCP token gives read access to the same corpus the website exposes.
 Do not share it. Do not commit config files containing it to version
 control.
 """

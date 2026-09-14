@@ -2,13 +2,13 @@
 
 Two modes:
 
-* **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with their
-  access code in `WENKU_BETA_PASSPHRASE`; the server logs into the web API
+* **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with the
+  configured service credential in `WENKU_BETA_PASSPHRASE`; the server logs into the web API
   and returns results over stdio.
 
 * **hosted HTTP** (`python -m qian_wenku_mcp.server`) — runs on the
   deployment host as a sibling service to the web app, accepts active
-  access codes as bearer tokens, and is meant to be fronted by nginx.
+  MCP tokens as bearer tokens, and is meant to be fronted by nginx.
 """
 
 from __future__ import annotations
@@ -281,7 +281,7 @@ def main() -> None:
 def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
     """Run the MCP server over HTTP behind the deployment's nginx.
 
-    Accepts active individual access codes plus an optional operator token.
+    Accepts active individual MCP tokens plus an optional operator token.
     Requests are rejected by middleware before reaching the MCP stack, so
     any invalid token gets a plain 401.
     """
@@ -294,7 +294,7 @@ def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
     access_db_path = os.environ.get("ACCESS_DATABASE_PATH", "")
     access_code_secret = os.environ.get("ACCESS_CODE_SECRET", "")
     if access_db_path and not access_code_secret:
-        raise RuntimeError("ACCESS_CODE_SECRET is required for individual access codes")
+        raise RuntimeError("ACCESS_CODE_SECRET is required for individual MCP tokens")
     if not operator_token and not access_db_path:
         raise RuntimeError("Hosted MCP authentication is not configured")
     if not _passphrase:

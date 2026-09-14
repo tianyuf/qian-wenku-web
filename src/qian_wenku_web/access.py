@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmailDeliveryError(RuntimeError):
-    """Raised when an access-code email cannot be delivered."""
+    """Raised when an authentication email cannot be delivered."""
 
 
 class AccessRequestLimitError(RuntimeError):
@@ -51,52 +51,105 @@ def initialize_access_database(path: str) -> None:
             columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(access_grants)")
             }
-            if "expires_at" in columns:
-                connection.execute("DROP INDEX IF EXISTS access_grants_email_idx")
+            if "code_hash" not in columns:
+                connection.execute("ALTER TABLE access_grants ADD COLUMN code_hash BLOB")
+            if "expires_at" not in columns:
+                connection.execute("ALTER TABLE access_grants ADD COLUMN expires_at INTEGER")
                 connection.execute(
-                    """
-                    CREATE TABLE access_grants_without_expiration (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        email TEXT NOT NULL,
-                        code_hash BLOB NOT NULL UNIQUE,
-                        terms_version TEXT NOT NULL,
-                        requested_at INTEGER NOT NULL,
-                        revoked_at INTEGER,
-                        last_used_at INTEGER
-                    )
-                    """
-                )
-                connection.execute(
-                    """
-                    INSERT INTO access_grants_without_expiration
-                        (id, email, code_hash, terms_version, requested_at,
-                         revoked_at, last_used_at)
-                    SELECT id, email, code_hash, terms_version, requested_at,
-                           revoked_at, last_used_at
-                    FROM access_grants
-                    """
-                )
-                connection.execute("DROP TABLE access_grants")
-                connection.execute(
-                    "ALTER TABLE access_grants_without_expiration RENAME TO access_grants"
+                    "UPDATE access_grants SET expires_at = 9223372036854775807"
                 )
         else:
             connection.execute(
                 """
                 CREATE TABLE access_grants (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL,
-                code_hash BLOB NOT NULL UNIQUE,
-                terms_version TEXT NOT NULL,
-                requested_at INTEGER NOT NULL,
-                revoked_at INTEGER,
-                last_used_at INTEGER
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    code_hash BLOB,
+                    terms_version TEXT NOT NULL,
+                    requested_at INTEGER NOT NULL,
+                    expires_at INTEGER,
+                    revoked_at INTEGER,
+                    last_used_at INTEGER
                 )
                 """
             )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS access_grants_email_idx "
             "ON access_grants(email, requested_at)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS access_grants_code_hash_idx "
+            "ON access_grants(code_hash)"
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mcp_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                grant_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                token_hash BLOB NOT NULL UNIQUE,
+                token_hint TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                last_used_at INTEGER
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS mcp_tokens_grant_idx "
+            "ON mcp_tokens(grant_id, created_at)"
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS access_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        legacy_migrated = connection.execute(
+            "SELECT 1 FROM access_metadata WHERE key = 'legacy_tokens_migrated'"
+        ).fetchone()
+        if not legacy_migrated:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO mcp_tokens
+                    (grant_id, name, token_hash, token_hint, created_at,
+                     revoked_at, last_used_at)
+                SELECT id, 'Legacy access token', code_hash, 'qx_legacy',
+                       requested_at, revoked_at, last_used_at
+                FROM access_grants
+                WHERE code_hash IS NOT NULL
+                """
+            )
+            connection.execute(
+                "INSERT INTO access_metadata (key, value) VALUES (?, ?)",
+                ("legacy_tokens_migrated", str(int(time.time()))),
+            )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS magic_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                grant_id INTEGER NOT NULL,
+                token_hash BLOB NOT NULL UNIQUE,
+                next_url TEXT NOT NULL,
+                purpose TEXT NOT NULL DEFAULT 'login',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER
+            )
+            """
+        )
+        magic_link_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(magic_links)")
+        }
+        if "purpose" not in magic_link_columns:
+            connection.execute(
+                "ALTER TABLE magic_links ADD COLUMN purpose TEXT NOT NULL DEFAULT 'login'"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS magic_links_grant_idx "
+            "ON magic_links(grant_id, created_at)"
         )
 
 
@@ -109,85 +162,153 @@ def _read_only_connection(path: str) -> sqlite3.Connection:
     return sqlite3.connect(uri, uri=True, timeout=5)
 
 
-def issue_access_grant(
+def issue_magic_link(
     path: str,
     secret: str,
     email: str,
-    terms_version: str,
-    cooldown_seconds: int = 900,
+    next_url: str,
+    *,
+    terms_version: str | None = None,
+    create_account: bool = False,
+    ttl_seconds: int = 900,
+    cooldown_seconds: int = 60,
     hourly_limit: int = 100,
 ) -> tuple[int, str] | None:
-    """Issue a grant, or return None when the email is in cooldown."""
+    """Issue a one-time login link for an existing or newly created account."""
     now = int(time.time())
+    purpose = "access_request" if create_account else "login"
 
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
         issued_last_hour = connection.execute(
-            "SELECT COUNT(*) FROM access_grants WHERE requested_at > ?",
-            (now - 3600,),
+            "SELECT COUNT(*) FROM magic_links WHERE purpose = ? AND created_at > ?",
+            (purpose, now - 3600),
         ).fetchone()[0]
         if issued_last_hour >= hourly_limit:
-            raise AccessRequestLimitError("Hourly access-code limit reached")
-        recent = connection.execute(
+            raise AccessRequestLimitError("Hourly magic-link limit reached")
+        account = connection.execute(
             """
-            SELECT 1 FROM access_grants
-            WHERE email = ? AND requested_at > ? AND revoked_at IS NULL
+            SELECT id FROM access_grants
+            WHERE email = ? COLLATE NOCASE AND revoked_at IS NULL
+            ORDER BY requested_at DESC, id DESC
             LIMIT 1
             """,
-            (email, now - cooldown_seconds),
+            (email,),
+        ).fetchone()
+        if not account and not create_account:
+            return None
+        if account:
+            grant_id = int(account[0])
+            if create_account and terms_version:
+                connection.execute(
+                    "UPDATE access_grants SET terms_version = ? WHERE id = ?",
+                    (terms_version, grant_id),
+                )
+        else:
+            cursor = connection.execute(
+                """
+                INSERT INTO access_grants
+                    (email, code_hash, terms_version, requested_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    email,
+                    _code_hash(secret, "account_" + secrets.token_urlsafe(32)),
+                    terms_version or "",
+                    now,
+                    9223372036854775807,
+                ),
+            )
+            grant_id = int(cursor.lastrowid)
+
+        recent = connection.execute(
+            """
+            SELECT 1 FROM magic_links
+            WHERE grant_id = ? AND created_at > ?
+            LIMIT 1
+            """,
+            (grant_id, now - cooldown_seconds),
         ).fetchone()
         if recent:
             return None
 
+        connection.execute(
+            "UPDATE magic_links SET used_at = ? WHERE grant_id = ? AND used_at IS NULL",
+            (now, grant_id),
+        )
+
         for _ in range(3):
-            code = "qx_" + secrets.token_urlsafe(24)
+            token = "qml_" + secrets.token_urlsafe(32)
             try:
                 cursor = connection.execute(
                     """
-                    INSERT INTO access_grants
-                        (email, code_hash, terms_version, requested_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO magic_links
+                        (grant_id, token_hash, next_url, purpose, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (email, _code_hash(secret, code), terms_version, now),
+                    (
+                        grant_id,
+                        _code_hash(secret, token),
+                        next_url,
+                        purpose,
+                        now,
+                        now + ttl_seconds,
+                    ),
                 )
-                return cursor.lastrowid, code
+                return int(cursor.lastrowid), token
             except sqlite3.IntegrityError:
                 continue
 
-    raise RuntimeError("Unable to generate a unique access code")
+    raise RuntimeError("Unable to generate a unique magic link")
 
 
-def verify_access_code(
+def consume_magic_link(
     path: str,
     secret: str,
-    code: str,
-    *,
-    mark_used: bool = False,
-) -> int | None:
-    """Return the active grant ID matching a supplied plaintext code."""
-    if not code.startswith("qx_") or len(code) > 128:
+    token: str,
+) -> tuple[int, str] | None:
+    """Consume a single-use login token and return its account and next URL."""
+    if not token.startswith("qml_") or len(token) > 128:
         return None
 
     now = int(time.time())
-    digest = _code_hash(secret, code)
-    connection_factory = sqlite3.connect if mark_used else _read_only_connection
-    with connection_factory(path) as connection:
+    digest = _code_hash(secret, token)
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
             """
-            SELECT id FROM access_grants
-            WHERE code_hash = ? AND revoked_at IS NULL
+            SELECT magic_links.id, magic_links.grant_id, magic_links.next_url
+            FROM magic_links
+            JOIN access_grants ON access_grants.id = magic_links.grant_id
+            WHERE magic_links.token_hash = ?
+              AND magic_links.expires_at > ?
+              AND magic_links.used_at IS NULL
+              AND access_grants.revoked_at IS NULL
             """,
-            (digest,),
+            (digest, now),
         ).fetchone()
         if not row:
             return None
-        grant_id = int(row[0])
-        if mark_used:
-            connection.execute(
-                "UPDATE access_grants SET last_used_at = ? WHERE id = ?",
-                (now, grant_id),
-            )
-        return grant_id
+        link_id, grant_id, next_url = int(row[0]), int(row[1]), str(row[2])
+        cursor = connection.execute(
+            "UPDATE magic_links SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (now, link_id),
+        )
+        if cursor.rowcount != 1:
+            return None
+        connection.execute(
+            "UPDATE access_grants SET last_used_at = ? WHERE id = ?",
+            (now, grant_id),
+        )
+        return grant_id, next_url
+
+
+def delete_magic_link(path: str, link_id: int) -> None:
+    """Delete an undelivered login link so the user can retry immediately."""
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute(
+            "DELETE FROM magic_links WHERE id = ? AND used_at IS NULL", (link_id,)
+        )
 
 
 def is_access_grant_active(path: str, grant_id: int) -> bool:
@@ -216,66 +337,115 @@ def get_access_grant(path: str, grant_id: int) -> str | None:
     return str(row[0]) if row else None
 
 
-def update_access_grant_email(path: str, grant_id: int, email: str) -> bool:
-    """Update the email attached to an active grant."""
-    with sqlite3.connect(path, timeout=5) as connection:
-        cursor = connection.execute(
-            """
-            UPDATE access_grants SET email = ?
-            WHERE id = ? AND revoked_at IS NULL
-            """,
-            (email, grant_id),
-        )
-    return cursor.rowcount == 1
-
-
-def rotate_access_code(
+def create_mcp_token(
     path: str,
     secret: str,
     grant_id: int,
-) -> str | None:
-    """Revoke this grant's code and all sibling codes for the same email,
-    then issue a single fresh code on this grant row. The new plaintext code
-    is returned once; only its hash is stored."""
+    name: str,
+) -> tuple[int, str] | None:
+    """Create a named MCP token and return its plaintext value once."""
+    name = name.strip()
+    if not name or len(name) > 80:
+        raise ValueError("MCP token name must be between 1 and 80 characters")
     now = int(time.time())
 
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
-            """
-            SELECT email FROM access_grants
-            WHERE id = ? AND revoked_at IS NULL
-            """,
+            "SELECT 1 FROM access_grants WHERE id = ? AND revoked_at IS NULL",
             (grant_id,),
         ).fetchone()
         if not row:
             return None
-        email = row[0]
-        connection.execute(
-            """
-            UPDATE access_grants SET revoked_at = ?
-            WHERE email = ? AND revoked_at IS NULL
-            """,
-            (now, email),
-        )
         for _ in range(3):
-            code = "qx_" + secrets.token_urlsafe(24)
+            token = "qxmcp_" + secrets.token_urlsafe(32)
             try:
                 cursor = connection.execute(
                     """
-                    UPDATE access_grants
-                    SET code_hash = ?, requested_at = ?,
-                        revoked_at = NULL, last_used_at = NULL
-                    WHERE id = ?
+                    INSERT INTO mcp_tokens
+                        (grant_id, name, token_hash, token_hint, created_at)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (_code_hash(secret, code), now, grant_id),
+                    (
+                        grant_id,
+                        name,
+                        _code_hash(secret, token),
+                        f"qxmcp_...{token[-6:]}",
+                        now,
+                    ),
                 )
-                if cursor.rowcount == 1:
-                    return code
+                return int(cursor.lastrowid), token
             except sqlite3.IntegrityError:
                 continue
 
-    raise RuntimeError("Unable to generate a unique access code")
+    raise RuntimeError("Unable to generate a unique MCP token")
+
+
+def list_mcp_tokens(path: str, grant_id: int) -> list[dict[str, int | str | None]]:
+    """List active and revoked MCP tokens belonging to an account."""
+    with _read_only_connection(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT token.id, token.name, token.token_hint, token.created_at,
+                   token.revoked_at, token.last_used_at
+            FROM mcp_tokens AS token
+            JOIN access_grants AS token_account ON token_account.id = token.grant_id
+            JOIN access_grants AS current_account ON current_account.id = ?
+            WHERE token_account.email = current_account.email COLLATE NOCASE
+              AND current_account.revoked_at IS NULL
+            ORDER BY token.created_at DESC, token.id DESC
+            """,
+            (grant_id,),
+        ).fetchall()
+    return [
+        {
+            "id": int(row[0]),
+            "name": str(row[1]),
+            "hint": str(row[2]),
+            "created_at": int(row[3]),
+            "revoked_at": int(row[4]) if row[4] is not None else None,
+            "last_used_at": int(row[5]) if row[5] is not None else None,
+        }
+        for row in rows
+    ]
+
+
+def revoke_mcp_token(path: str, grant_id: int, token_id: int) -> bool:
+    """Revoke one MCP token belonging to the authenticated account."""
+    with sqlite3.connect(path, timeout=5) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE mcp_tokens SET revoked_at = ?
+            WHERE id = ? AND revoked_at IS NULL AND grant_id IN (
+                SELECT sibling.id
+                FROM access_grants AS sibling
+                JOIN access_grants AS current_account ON current_account.id = ?
+                WHERE sibling.email = current_account.email COLLATE NOCASE
+                  AND current_account.revoked_at IS NULL
+            )
+            """,
+            (int(time.time()), token_id, grant_id),
+        )
+    return cursor.rowcount == 1
+
+
+def verify_mcp_token(path: str, secret: str, token: str) -> bool:
+    """Validate an MCP token without requiring write access to the database."""
+    if not token.startswith(("qx_", "qxmcp_")) or len(token) > 128:
+        return False
+    with _read_only_connection(path) as connection:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM mcp_tokens
+            JOIN access_grants ON access_grants.id = mcp_tokens.grant_id
+            WHERE mcp_tokens.token_hash = ?
+              AND mcp_tokens.revoked_at IS NULL
+              AND access_grants.revoked_at IS NULL
+            """,
+            (_code_hash(secret, token),),
+        ).fetchone()
+    return row is not None
 
 
 def access_database_is_healthy(path: str) -> bool:
@@ -301,7 +471,7 @@ def verify_bearer_token(
     if operator_token and hmac.compare_digest(value.encode(), operator_token.encode()):
         return True
     if access_db_path:
-        return verify_access_code(access_db_path, access_code_secret, value) is not None
+        return verify_mcp_token(access_db_path, access_code_secret, value)
     return False
 
 
@@ -349,34 +519,32 @@ def verify_turnstile(
         return False
 
 
-def send_access_code(
+def send_magic_link(
     api_key: str,
     sender: str,
     recipient: str,
-    code: str,
-    grant_id: int,
+    token: str,
+    link_id: int,
     base_url: str,
 ) -> None:
-    """Send an issued code through Resend's HTTPS API."""
-    login_url = f"{base_url.rstrip('/')}/login"
-    safe_code = html.escape(code)
+    """Send a single-use login link through Resend's HTTPS API."""
+    login_url = f"{base_url.rstrip('/')}/login#token={token}"
+    safe_login_url = html.escape(login_url, quote=True)
     payload = {
         "from": sender,
         "to": [recipient],
-        "subject": "Your Qian Xuesen Archive access code",
+        "subject": "Sign in to the Qian Xuesen Archive",
         "text": (
-            "Your Qian Xuesen Archive access code is:\n\n"
-            f"{code}\n\n"
-            f"Log in at {login_url}\n\n"
-            "This code does not expire. It also works as your MCP "
-            "bearer token. Do not share it."
+            "Use this single-use link to sign in to the Qian Xuesen Archive:\n\n"
+            f"{login_url}\n\n"
+            "This link expires in 15 minutes. If you did not request it, "
+            "you can ignore this email."
         ),
         "html": (
-            "<p>Your Qian Xuesen Archive access code is:</p>"
-            f"<p><code>{safe_code}</code></p>"
-            f'<p><a href="{html.escape(login_url)}">Log in to the archive</a></p>'
-            "<p>This code does not expire. It also works as your MCP "
-            "bearer token. Do not share it.</p>"
+            "<p>Use this single-use link to sign in to the Qian Xuesen Archive:</p>"
+            f'<p><a href="{safe_login_url}">Sign in to the archive</a></p>'
+            "<p>This link expires in 15 minutes. If you did not request it, "
+            "you can ignore this email.</p>"
         ),
     }
     request = Request(
@@ -385,7 +553,7 @@ def send_access_code(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "Idempotency-Key": f"qian-wenku-access-{grant_id}",
+            "Idempotency-Key": f"qian-wenku-magic-link-{link_id}",
             "User-Agent": "qian-wenku-web/0.1",
         },
         method="POST",
@@ -395,4 +563,4 @@ def send_access_code(
             if response.status not in {200, 201}:
                 raise EmailDeliveryError(f"Resend returned HTTP {response.status}")
     except (HTTPError, URLError, TimeoutError) as error:
-        raise EmailDeliveryError("Resend could not deliver the access code") from error
+        raise EmailDeliveryError("Resend could not deliver the magic link") from error

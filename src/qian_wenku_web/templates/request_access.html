@@ -14,10 +14,10 @@
         {% if unavailable %}
         <div class="login-error" role="alert">访问申请暂时不可用。</div>
         {% elif submitted %}
-        <p class="login-description access-success">访问码已发送至您的邮箱，长期有效，同时可用于文库的 MCP 服务。</p>
-        <a class="btn btn-primary w-100" href="{{ url_for('login') }}">输入访问码</a>
+        <p class="login-description access-success">登录链接已发送至您的邮箱。链接仅可使用一次，并将在 15 分钟后失效。</p>
+        <a class="btn btn-primary w-100" href="{{ url_for('login') }}">返回登录</a>
         {% else %}
-        <p class="login-description">本文库面向研究用途开放。输入您的邮箱，我们会向您发送个人访问码。</p>
+        <p class="login-description">本文库面向研究用途开放。输入您的邮箱，我们会向您发送一次性登录链接。</p>
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <form method="post" class="login-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -34,8 +34,8 @@
                 <span>我了解访问仅限研究用途，不包括复制或再分发文库资料的权利。</span>
             </label>
             <div class="cf-turnstile access-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="request_access"></div>
-            <button type="submit" class="btn btn-primary">发送访问码</button>
-            <p class="login-access"><a href="{{ url_for('login') }}">已有访问码</a></p>
+            <button type="submit" class="btn btn-primary">申请并发送登录链接</button>
+            <p class="login-access"><a href="{{ url_for('login') }}">已有访问权限</a></p>
         </form>
         {% endif %}
     </section>

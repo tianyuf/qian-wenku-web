@@ -1,4 +1,5 @@
 import hashlib
+import re
 import sqlite3
 
 from qian_wenku_web.app import create_app
@@ -89,7 +90,7 @@ def test_beta_login_flow(artifact_dir, monkeypatch):
         "/login", data={"passphrase": "wrong", "next": "/browse"}
     )
     assert wrong.status_code == 200
-    assert "访问码不正确或已失效" in wrong.get_data(as_text=True)
+    assert "管理员口令不正确" in wrong.get_data(as_text=True)
     assert 'lang="zh-CN"' in wrong.get_data(as_text=True)
     assert "Request access" not in wrong.get_data(as_text=True)
 
@@ -134,12 +135,12 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
     monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
     monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
-    sent_codes = []
+    sent_links = []
 
     def fake_send(*args):
-        sent_codes.append(args[3])
+        sent_links.append(args[3])
 
-    monkeypatch.setattr("qian_wenku_web.app.send_access_code", fake_send)
+    monkeypatch.setattr("qian_wenku_web.app.send_magic_link", fake_send)
     monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args: True)
     app = create_app(
         db_path=artifact_dir / "corpus.db",
@@ -152,7 +153,7 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     assert access_client.get("/browse").status_code == 302
     request_page = access_client.get("/request-access")
     assert request_page.status_code == 200
-    assert "发送访问码" in request_page.get_data(as_text=True)
+    assert "申请并发送登录链接" in request_page.get_data(as_text=True)
     with access_client.session_transaction() as session:
         csrf_token = session["access_request_csrf"]
 
@@ -176,10 +177,10 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
         },
     )
     assert response.status_code == 200
-    assert "访问码已发送至您的邮箱" in response.get_data(as_text=True)
-    assert len(sent_codes) == 1
-    assert sent_codes[0].startswith("qx_")
-    assert sent_codes[0].encode() not in access_db.read_bytes()
+    assert "登录链接已发送至您的邮箱" in response.get_data(as_text=True)
+    assert len(sent_links) == 1
+    assert sent_links[0].startswith("qml_")
+    assert sent_links[0].encode() not in access_db.read_bytes()
 
     duplicate = access_client.post(
         "/request-access",
@@ -190,12 +191,21 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
         },
     )
     assert duplicate.status_code == 200
-    assert len(sent_codes) == 1
+    assert len(sent_links) == 1
 
+    access_client.get("/login")
+    with access_client.session_transaction() as login_session:
+        login_csrf = login_session["login_csrf"]
     login = access_client.post(
-        "/login", data={"passphrase": sent_codes[0], "next": "/browse"}
+        "/login",
+        data={
+            "action": "consume_magic_link",
+            "csrf_token": login_csrf,
+            "token": sent_links[0],
+        },
     )
     assert login.status_code == 302
+    assert login.headers["Location"].endswith("/")
     browse = access_client.get("/browse")
     assert browse.status_code == 200
     assert 'href="/account"' in browse.get_data(as_text=True)
@@ -204,48 +214,78 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     assert account_page.status_code == 200
     assert "Researcher@example.com" in account_page.get_data(as_text=True)
     assert "长期有效" in account_page.get_data(as_text=True)
+    assert "MCP 令牌" in account_page.get_data(as_text=True)
     with access_client.session_transaction() as account_session:
         account_csrf = account_session["account_csrf"]
 
-    invalid_email = access_client.post(
-        "/account",
-        data={"csrf_token": account_csrf, "email": "not-an-email"},
-    )
-    assert "请输入有效的邮箱地址" in invalid_email.get_data(as_text=True)
-
     invalid_csrf = access_client.post(
         "/account",
-        data={"csrf_token": "wrong", "email": "other@example.com"},
+        data={
+            "csrf_token": "wrong",
+            "action": "create_mcp_token",
+            "token_name": "Invalid",
+        },
     )
     assert "请刷新页面后重试" in invalid_csrf.get_data(as_text=True)
 
-    updated = access_client.post(
+    created = access_client.post(
         "/account",
-        data={"csrf_token": account_csrf, "email": "Updated@Example.COM"},
+        data={
+            "csrf_token": account_csrf,
+            "action": "create_mcp_token",
+            "token_name": "Claude Desktop",
+        },
     )
-    assert updated.status_code == 200
-    assert "邮箱已更新" in updated.get_data(as_text=True)
-    assert "Updated@example.com" in updated.get_data(as_text=True)
-    with sqlite3.connect(access_db) as connection:
-        assert connection.execute(
-            "SELECT email FROM access_grants WHERE id = 1"
-        ).fetchone()[0] == "Updated@example.com"
+    created_text = created.get_data(as_text=True)
+    assert created.status_code == 200
+    assert "MCP 令牌已创建" in created_text
+    assert "此页仅显示一次" in created_text
+    mcp_token = re.search(r'value="(qxmcp_[^"]+)"', created_text).group(1)
+    assert mcp_token.encode() not in access_db.read_bytes()
 
-    rotated = access_client.post(
+    with sqlite3.connect(access_db) as connection:
+        token_id = connection.execute(
+            "SELECT id FROM mcp_tokens WHERE grant_id = 1 AND revoked_at IS NULL"
+        ).fetchone()[0]
+    revoked_token = access_client.post(
         "/account",
-        data={"csrf_token": account_csrf, "action": "rotate_code"},
+        data={
+            "csrf_token": account_csrf,
+            "action": "revoke_mcp_token",
+            "token_id": token_id,
+        },
     )
-    rotated_text = rotated.get_data(as_text=True)
-    assert rotated.status_code == 200
-    assert "旧访问码已失效" in rotated_text
-    assert "此页仅显示一次" in rotated_text
-    assert sent_codes[0] not in rotated_text
-    assert access_client.post(
-        "/login", data={"passphrase": sent_codes[0]}
-    ).status_code == 200
+    assert "MCP 令牌已撤销" in revoked_token.get_data(as_text=True)
+
+    assert access_client.post("/logout").status_code == 302
+    with sqlite3.connect(access_db) as connection:
+        connection.execute("UPDATE magic_links SET created_at = 0")
+    access_client.get("/login?next=/browse")
+    with access_client.session_transaction() as login_session:
+        login_csrf = login_session["login_csrf"]
+    emailed_login = access_client.post(
+        "/login",
+        data={
+            "csrf_token": login_csrf,
+            "next": "/browse",
+            "email": "researcher@example.com",
+        },
+    )
+    assert "我们已发送一封登录邮件" in emailed_login.get_data(as_text=True)
+    assert len(sent_links) == 2
+    returning_login = access_client.post(
+        "/login",
+        data={
+            "action": "consume_magic_link",
+            "csrf_token": login_csrf,
+            "token": sent_links[1],
+        },
+    )
+    assert returning_login.status_code == 302
+    assert returning_login.headers["Location"].endswith("/browse")
 
     with sqlite3.connect(access_db) as connection:
         connection.execute("UPDATE access_grants SET revoked_at = 1")
-    revoked = access_client.get("/browse")
-    assert revoked.status_code == 302
-    assert "/login" in revoked.headers["Location"]
+    revoked_account = access_client.get("/browse")
+    assert revoked_account.status_code == 302
+    assert "/login" in revoked_account.headers["Location"]

@@ -11,17 +11,68 @@
 <main class="login-view" id="main">
     <section class="login-panel" aria-labelledby="login-title">
         <h1 id="login-title">访问文库</h1>
-        <p class="login-description">输入您的个人访问码以继续。</p>
+        {% if submitted %}
+        <p class="login-description access-success">如果该邮箱已获准访问，我们已发送一封登录邮件。链接仅可使用一次，并将在 15 分钟后失效。</p>
+        <a class="btn btn-primary w-100" href="{{ url_for('login', next=next_url) }}">重新发送</a>
+        {% elif magic_login_enabled %}
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        <div id="magic-link-confirm" hidden>
+            <p class="login-description">确认在此浏览器中登录钱学森文库。</p>
+            <form method="post" class="login-form">
+                <input type="hidden" name="action" value="consume_magic_link">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="token" id="magic-link-token" value="">
+                <button type="submit" class="btn btn-primary">确认登录</button>
+            </form>
+        </div>
+        <div id="email-login-request">
+            <p class="login-description">输入您的邮箱，我们会发送一个一次性登录链接。</p>
+            <form method="post" class="login-form">
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="access-honeypot" aria-hidden="true">
+                    <label for="website">Website</label>
+                    <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+                </div>
+                <div class="filter-group">
+                    <label for="email">邮箱地址</label>
+                    <input class="form-control" id="email" name="email" type="email" required autofocus autocomplete="email" value="{{ request.form.get('email', '') }}">
+                </div>
+                <div class="cf-turnstile access-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="login"></div>
+                <button type="submit" class="btn btn-primary">发送登录链接</button>
+                {% if access_requests_enabled %}<p class="login-access">尚未获得访问权限？<a href="{{ url_for('request_access') }}">申请访问</a></p>{% endif %}
+            </form>
+        </div>
+        {% elif operator_login_enabled %}
+        <p class="login-description">输入管理员口令以继续。</p>
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <form method="post" class="login-form">
             <input type="hidden" name="next" value="{{ next_url }}">
             <div class="filter-group">
-                <label for="passphrase">访问码</label>
+                <label for="passphrase">管理员口令</label>
                 <input class="form-control" id="passphrase" name="passphrase" type="password" required autofocus autocomplete="current-password">
             </div>
             <button type="submit" class="btn btn-primary">进入文库</button>
-            {% if access_requests_enabled %}<p class="login-access"><a href="{{ url_for('request_access') }}">申请访问码</a></p>{% endif %}
         </form>
+        {% else %}
+        <div class="login-error" role="alert">邮件登录暂时不可用。</div>
+        {% endif %}
     </section>
 </main>
+{% endblock %}
+
+{% block extra_js %}
+{% if magic_login_enabled and not submitted %}
+<script>
+(function() {
+    var token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+    if (!token || !token.startsWith('qml_')) return;
+    document.getElementById('magic-link-token').value = token;
+    document.getElementById('email-login-request').hidden = true;
+    document.getElementById('magic-link-confirm').hidden = false;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+})();
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{% endif %}
 {% endblock %}

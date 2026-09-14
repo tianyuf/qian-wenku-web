@@ -50,7 +50,7 @@
                 </button>
             </div>
             <p class="text-muted small mb-0">
-                AI 会询问您的<strong>访问码</strong>（即本网站登录码，可在申请页自动获取）。
+                AI 会询问您的<strong>MCP 令牌</strong>（登录后可在账户页面创建）。
             </p>
         </div>
     </div>
@@ -79,7 +79,7 @@
   "type": "remote",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
   "headers": {
-    "Authorization": "Bearer YOUR_ACCESS_CODE"
+    "Authorization": "Bearer YOUR_MCP_TOKEN"
   }
 }</code></pre>
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制配置</button>
@@ -89,7 +89,7 @@
                     <p class="text-muted small mb-2">在项目目录里运行：</p>
                     <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudecode">claude mcp add --transport http qian-wenku \
   https://wenku.qianxuesen.org/mcp/rpc \
-  --header "Authorization: Bearer YOUR_ACCESS_CODE"</code></pre>
+  --header "Authorization: Bearer YOUR_MCP_TOKEN"</code></pre>
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudecode">复制命令</button>
                     <p class="text-muted small mt-3 mb-0">默认只对当前项目生效；如需全局，加 <code>--scope user</code>。</p>
                 </div>
@@ -99,7 +99,7 @@
   "type": "http",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
   "headers": {
-    "Authorization": "Bearer YOUR_ACCESS_CODE"
+    "Authorization": "Bearer YOUR_MCP_TOKEN"
   }
 }</code></pre>
                     <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置</button>
@@ -114,8 +114,8 @@
             <h5 class="card-title">服务信息</h5>
             <ul class="text-muted mb-0">
                 <li><strong>MCP endpoint URL</strong>: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
-                <li><strong>请求头</strong>: <code>Authorization: Bearer 您的访问码</code></li>
-                <li>访问码即本网站登录码，可在<a href="{{ url_for('request_access') }}">申请页</a>自动获取；不要分享给他人。</li>
+                <li><strong>请求头</strong>: <code>Authorization: Bearer 您的 MCP 令牌</code></li>
+                <li>登录后可在<a href="{{ url_for('account') }}">账户页面</a>创建和撤销 MCP 令牌；不要分享给他人。</li>
             </ul>
         </div>
     </div>
@@ -127,7 +127,7 @@
                 适合：让 AI 帮您跨年份、跨来源做主题性检索与综述，快速定位某段历史的全部相关条目。
             </p>
             <p class="card-text text-muted mb-0">
-                请注意：MCP 与网页端共用同一个个人访问码，不会绕过现有访问控制。
+                请注意：MCP 令牌与网页邮件登录相互独立，可按客户端单独撤销。
                 AI 助手的输出可能包含错误或对原文的转述偏差，引用前请回到条目页核对扫描页原文。
             </p>
         </div>
@@ -139,7 +139,7 @@
             <p class="card-text text-muted mb-0">
                 MCP 服务的代码托管在
                 <a href="https://github.com/tianyuf/qian-wenku-web">tianyuf/qian-wenku-web</a>（MIT 许可证，代码部分）。
-                访问码可在<a href="{{ url_for('request_access') }}">申请页</a>自动获取。
+                MCP 令牌可在<a href="{{ url_for('account') }}">账户页面</a>创建。
             </p>
         </div>
     </div>

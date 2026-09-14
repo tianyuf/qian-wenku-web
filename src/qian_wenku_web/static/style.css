@@ -1145,6 +1145,68 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     font-size: 0.86rem;
 }
 
+.account-section {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.account-section h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.mcp-token-list {
+    margin: 1rem 0;
+    border-top: 1px solid var(--border);
+}
+
+.mcp-token-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.mcp-token-row > div {
+    min-width: 0;
+}
+
+.mcp-token-row strong,
+.mcp-token-row code,
+.mcp-token-row span {
+    display: block;
+}
+
+.mcp-token-row code,
+.mcp-token-row span {
+    margin-top: 0.15rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.mcp-token-row.is-revoked {
+    opacity: 0.58;
+}
+
+.mcp-token-status {
+    flex: 0 0 auto;
+}
+
+.mcp-token-create {
+    margin-top: 1rem;
+}
+
+@media (max-width: 420px) {
+    .mcp-token-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
 .account-logout {
     margin-top: 0.75rem;
 }
