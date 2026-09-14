@@ -533,15 +533,15 @@ def send_magic_link(
     payload = {
         "from": sender,
         "to": [recipient],
-        "subject": "登录钱学森文库",
+        "subject": "登录 qianxuesen.org",
         "text": (
-            "请使用以下一次性链接登录钱学森文库：\n\n"
+            "请使用以下一次性链接登录 qianxuesen.org：\n\n"
             f"{login_url}\n\n"
             "链接将在 15 分钟后失效，且仅可使用一次。"
             "如非本人操作，可忽略本邮件。"
         ),
         "html": (
-            "<p>请使用以下一次性链接登录钱学森文库：</p>"
+            "<p>请使用以下一次性链接登录 qianxuesen.org：</p>"
             f'<p><a href="{safe_login_url}">点击登录</a></p>'
             "<p>链接将在 15 分钟后失效，且仅可使用一次。"
             "如非本人操作，可忽略本邮件。</p>"
