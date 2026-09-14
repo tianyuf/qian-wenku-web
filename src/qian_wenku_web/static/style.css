@@ -88,6 +88,22 @@ a.link-plain:hover {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Directional fade hints, toggled by JS only while the nav overflows */
+.app-header .nav.can-scroll {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
+.app-header .nav.scrolled-start {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent 100%);
+}
+.app-header .nav.scrolled-end {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 calc(100% - 12px), #000 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 calc(100% - 12px), #000 100%);
 }
 
 .app-header .nav::-webkit-scrollbar {

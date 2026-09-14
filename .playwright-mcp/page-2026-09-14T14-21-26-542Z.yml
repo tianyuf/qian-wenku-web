@@ -1,0 +1,161 @@
+- generic [active] [ref=f5e1]:
+  - link "跳到主要内容" [ref=f5e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f5e3]:
+    - banner [ref=f5e4]:
+      - link "钱学森文库" [ref=f5e5] [cursor=pointer]:
+        - /url: /
+      - navigation "主导航" [ref=f5e6]:
+        - link "搜索" [ref=f5e7] [cursor=pointer]:
+          - /url: /
+        - link "目录" [ref=f5e8] [cursor=pointer]:
+          - /url: /browse
+        - link "收信人" [ref=f5e9] [cursor=pointer]:
+          - /url: /browse/recipients
+        - link "人物机构" [ref=f5e10] [cursor=pointer]:
+          - /url: /browse/entities
+        - link "时间线" [ref=f5e11] [cursor=pointer]:
+          - /url: /timeline
+        - link "关于" [ref=f5e12] [cursor=pointer]:
+          - /url: /about
+        - link "MCP" [ref=f5e13] [cursor=pointer]:
+          - /url: /mcp
+        - button "退出" [ref=f5e15] [cursor=pointer]
+    - generic [ref=f5e16]:
+      - complementary "筛选" [ref=f5e17]:
+        - generic [ref=f5e18]:
+          - generic [ref=f5e19]:
+            - generic [ref=f5e20]: 搜索关键词
+            - combobox "搜索关键词" [ref=f5e21]: 测试
+            - listbox "搜索建议" [ref=f5e22]
+          - generic [ref=f5e23]:
+            - generic [ref=f5e24]: 年份范围
+            - generic [ref=f5e25]:
+              - spinbutton "起始" [ref=f5e26]
+              - generic [ref=f5e27]: —
+              - spinbutton "结束" [ref=f5e28]
+          - generic [ref=f5e29]:
+            - generic [ref=f5e30]: 内容类型
+            - generic [ref=f5e31]:
+              - generic [ref=f5e32] [cursor=pointer]:
+                - radio "全部" [checked] [ref=f5e33]
+                - generic [ref=f5e34]: 全部
+              - generic [ref=f5e35] [cursor=pointer]:
+                - radio "年谱" [ref=f5e36]
+                - generic [ref=f5e37]: 年谱
+              - generic [ref=f5e38] [cursor=pointer]:
+                - radio "文集" [ref=f5e39]
+                - generic [ref=f5e40]: 文集
+              - generic [ref=f5e41] [cursor=pointer]:
+                - radio "书信" [ref=f5e42]
+                - generic [ref=f5e43]: 书信
+          - generic [ref=f5e44]:
+            - generic [ref=f5e45]: 来源
+            - generic [ref=f5e46]:
+              - generic [ref=f5e47] [cursor=pointer]:
+                - checkbox "测试人物书信 1" [ref=f5e48]
+                - generic [ref=f5e49]: 测试人物书信
+                - generic [ref=f5e50]: "1"
+              - generic [ref=f5e51] [cursor=pointer]:
+                - checkbox "测试人物年谱 2" [ref=f5e52]
+                - generic [ref=f5e53]: 测试人物年谱
+                - generic [ref=f5e54]: "2"
+              - generic [ref=f5e55] [cursor=pointer]:
+                - checkbox "测试人物年谱补编 1" [ref=f5e56]
+                - generic [ref=f5e57]: 测试人物年谱补编
+                - generic [ref=f5e58]: "1"
+              - generic [ref=f5e59] [cursor=pointer]:
+                - checkbox "测试人物文集 1" [ref=f5e60]
+                - generic [ref=f5e61]: 测试人物文集
+                - generic [ref=f5e62]: "1"
+          - generic [ref=f5e63]:
+            - button "搜索" [ref=f5e64] [cursor=pointer]
+            - link "清除" [ref=f5e65] [cursor=pointer]:
+              - /url: /
+      - separator "拖动调整列宽（左右箭头键）" [ref=f5e66]
+      - main "搜索结果" [ref=f5e67]:
+        - generic [ref=f5e69]:
+          - generic [ref=f5e71]:
+            - text: 测试
+            - link "移除关键词" [ref=f5e72] [cursor=pointer]:
+              - /url: /search/results?limit=20&offset=0
+              - text: ×
+          - generic [ref=f5e74]:
+            - text: 找到
+            - strong [ref=f5e75]: "5"
+            - text: 条结果 匹配「测试」
+          - generic [ref=f5e76]:
+            - generic [ref=f5e77]:
+              - generic [ref=f5e78]:
+                - generic [ref=f5e79]: 1911年12月11日
+                - generic [ref=f5e80]: 谱年谱 测试人物年谱
+              - generic [ref=f5e81]:
+                - button "原文" [ref=f5e82] [cursor=pointer]
+                - link "详情" [ref=f5e83] [cursor=pointer]:
+                  - /url: /e/nianpu-19111211-a
+            - generic [ref=f5e84]:
+              - text: 合成的年谱
+              - mark [ref=f5e85]: 测试
+              - text: 记录。
+          - generic [ref=f5e86]:
+            - generic [ref=f5e87]:
+              - generic [ref=f5e88]:
+                - generic [ref=f5e89]: 合成文集文章
+                - generic [ref=f5e90]: 1911年12月11日
+                - generic [ref=f5e91]: 文文集 测试人物文集
+              - generic [ref=f5e92]:
+                - button "原文" [ref=f5e93] [cursor=pointer]
+                - link "详情" [ref=f5e94] [cursor=pointer]:
+                  - /url: /e/wenji-19111211-c
+            - generic [ref=f5e95]:
+              - text: 用于检索
+              - mark [ref=f5e96]: 测试
+              - text: 的合成文章。
+          - generic [ref=f5e97]:
+            - generic [ref=f5e98]:
+              - generic [ref=f5e99]:
+                - generic [ref=f5e100]: 致测试收信人
+                - generic [ref=f5e101]: 1911年12月11日
+                - generic [ref=f5e102]: 信书信 测试人物书信
+              - generic [ref=f5e103]:
+                - button "原文" [ref=f5e104] [cursor=pointer]
+                - link "详情" [ref=f5e105] [cursor=pointer]:
+                  - /url: /e/shuxin-19111211-d
+            - generic [ref=f5e106]: 用于收信人页面的合成书信。
+          - generic [ref=f5e107]:
+            - generic [ref=f5e108]:
+              - generic [ref=f5e109]:
+                - generic [ref=f5e110]: 1911年12月11日
+                - generic [ref=f5e111]: 谱年谱 测试人物年谱补编
+              - link "详情" [ref=f5e113] [cursor=pointer]:
+                - /url: /e/nianpu-19111211-e
+            - generic [ref=f5e114]:
+              - text: 合成的年谱
+              - mark [ref=f5e115]: 测试
+              - text: 记录。
+          - generic [ref=f5e116]:
+            - generic [ref=f5e117]:
+              - generic [ref=f5e118]:
+                - generic [ref=f5e119]: 1912年1月
+                - generic [ref=f5e120]: 谱年谱 测试人物年谱
+              - generic [ref=f5e121]:
+                - button "原文" [ref=f5e122] [cursor=pointer]
+                - link "详情" [ref=f5e123] [cursor=pointer]:
+                  - /url: /e/nianpu-191201-b
+            - generic [ref=f5e124]:
+              - text: 另一条合成记录，提及
+              - mark [ref=f5e125]: 测试
+              - text: 机构。
+      - separator "拖动调整列宽（左右箭头键）" [ref=f5e126]
+      - complementary "PDF 预览" [ref=f5e127]:
+        - generic [ref=f5e128]:
+          - generic [ref=f5e129]: PDF 原文
+          - generic [ref=f5e130]:
+            - button "上一页" [ref=f5e131] [cursor=pointer]: ‹
+            - spinbutton "页码" [ref=f5e132]: "1"
+            - generic [ref=f5e133]: /
+            - generic [ref=f5e134]: —
+            - button "下一页" [ref=f5e135] [cursor=pointer]: ›
+        - generic [ref=f5e137]:
+          - paragraph [ref=f5e138]: PDF 预览
+          - paragraph [ref=f5e139]: 点击「原文」显示原文影像。

@@ -281,6 +281,21 @@
 
         // Column resizing (mouse + keyboard)
         (function() {
+            // Nav scroll affordance: fade edges only while the header nav overflows
+            var nav = document.querySelector('.app-header .nav');
+            if (nav) {
+                var updateNavFade = function() {
+                    var can = nav.scrollWidth > nav.clientWidth + 1;
+                    nav.classList.toggle('can-scroll', can);
+                    nav.classList.toggle('scrolled-start', can && nav.scrollLeft > 1);
+                    nav.classList.toggle('scrolled-end', can && nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 1);
+                };
+                nav.addEventListener('scroll', updateNavFade);
+                window.addEventListener('resize', updateNavFade);
+                if (window.ResizeObserver) new ResizeObserver(updateNavFade).observe(nav);
+                updateNavFade();
+            }
+
             // Make resize handles keyboard-focusable separators
             document.querySelectorAll('.resize-handle').forEach(function(h) {
                 h.setAttribute('role', 'separator');
