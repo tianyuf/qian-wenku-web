@@ -231,6 +231,19 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
             "SELECT email FROM access_grants WHERE id = 1"
         ).fetchone()[0] == "Updated@example.com"
 
+    rotated = access_client.post(
+        "/account",
+        data={"csrf_token": account_csrf, "action": "rotate_code"},
+    )
+    rotated_text = rotated.get_data(as_text=True)
+    assert rotated.status_code == 200
+    assert "旧访问码已失效" in rotated_text
+    assert "此页仅显示一次" in rotated_text
+    assert sent_codes[0] not in rotated_text
+    assert access_client.post(
+        "/login", data={"passphrase": sent_codes[0]}
+    ).status_code == 200
+
     with sqlite3.connect(access_db) as connection:
         connection.execute("UPDATE access_grants SET revoked_at = 1")
     revoked = access_client.get("/browse")

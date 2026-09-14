@@ -194,6 +194,57 @@ def update_access_grant_email(path: str, grant_id: int, email: str) -> bool:
     return cursor.rowcount == 1
 
 
+def rotate_access_code(
+    path: str,
+    secret: str,
+    grant_id: int,
+    ttl_days: int,
+) -> tuple[str, int] | None:
+    """Revoke this grant's code and all sibling codes for the same email,
+    then issue a single fresh code on this grant row. The new plaintext code
+    is returned once; only its hash is stored."""
+    now = int(time.time())
+    expires_at = now + ttl_days * 86400
+
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT email FROM access_grants
+            WHERE id = ? AND expires_at > ? AND revoked_at IS NULL
+            """,
+            (grant_id, now),
+        ).fetchone()
+        if not row:
+            return None
+        email = row[0]
+        connection.execute(
+            """
+            UPDATE access_grants SET revoked_at = ?
+            WHERE email = ? AND revoked_at IS NULL AND expires_at > ?
+            """,
+            (now, email, now),
+        )
+        for _ in range(3):
+            code = "qx_" + secrets.token_urlsafe(24)
+            try:
+                cursor = connection.execute(
+                    """
+                    UPDATE access_grants
+                    SET code_hash = ?, expires_at = ?, requested_at = ?,
+                        revoked_at = NULL, last_used_at = NULL
+                    WHERE id = ?
+                    """,
+                    (_code_hash(secret, code), expires_at, now, grant_id),
+                )
+                if cursor.rowcount == 1:
+                    return code, expires_at
+            except sqlite3.IntegrityError:
+                continue
+
+    raise RuntimeError("Unable to generate a unique access code")
+
+
 def access_database_is_healthy(path: str) -> bool:
     """Return whether the configured grant store can be queried."""
     try:

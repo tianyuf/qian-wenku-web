@@ -18,8 +18,31 @@
             </div>
         </dl>
 
+        {% if new_access_code %}
+        <div class="account-code" role="alert">
+            <p class="account-success">访问码已重置，旧访问码已失效。请立即复制保存（此页仅显示一次）：</p>
+            <div class="input-group mb-2">
+                <input type="text" class="form-control font-monospace" id="new-access-code"
+                       readonly value="{{ new_access_code }}" aria-label="新访问码">
+                <button class="btn btn-outline-secondary" type="button"
+                        onclick="copyAccessCode(this)">复制</button>
+            </div>
+        </div>
+        {% endif %}
+
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
-        {% if message %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
+        {% if message and not new_access_code %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
+
+        <div class="filter-group">
+            <label>访问码</label>
+            <p class="text-muted small">现有访问码仅以安全散列形式保存，无法重新显示。若已遗失，可重置并获取新码。</p>
+            <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="rotate_code">
+                <button type="submit" class="btn btn-outline-secondary"
+                        onclick="return confirm('重置后，旧访问码及使用该码的 MCP 配置将立即失效。确定继续吗？')">重置访问码（旧码立即失效）</button>
+            </form>
+        </div>
 
         <form method="post" class="login-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -35,4 +58,28 @@
         </form>
     </section>
 </main>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function copyAccessCode(btn) {
+    var input = document.getElementById('new-access-code');
+    var done = function() {
+        var orig = btn.textContent;
+        btn.textContent = '已复制';
+        setTimeout(function() { btn.textContent = orig; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).then(done).catch(function() {
+            input.select();
+            document.execCommand('copy');
+            done();
+        });
+    } else {
+        input.select();
+        document.execCommand('copy');
+        done();
+    }
+}
+</script>
 {% endblock %}

@@ -9,6 +9,7 @@ from qian_wenku_web.access import (
     initialize_access_database,
     issue_access_grant,
     normalize_email,
+    rotate_access_code,
     send_access_code,
     update_access_grant_email,
     verify_access_code,
@@ -55,6 +56,29 @@ def test_access_grant_cooldown(tmp_path):
     assert issue_access_grant(
         str(db_path), "secret", "reader@example.com", "2026-09", 90
     ) is None
+
+
+def test_rotate_access_code_revokes_sibling_codes(tmp_path):
+    db_path = tmp_path / "access.db"
+    initialize_access_database(str(db_path))
+    grant_id, old_code, _ = issue_access_grant(
+        str(db_path), "secret", "reader@example.com", "2026-09", 90
+    )
+    sibling_id, sibling_code, _ = issue_access_grant(
+        str(db_path), "secret", "reader@example.com", "2026-09", 90,
+        cooldown_seconds=0,
+    )
+
+    new_code, _ = rotate_access_code(
+        str(db_path), "secret", grant_id, 90
+    )
+
+    assert new_code.startswith("qx_")
+    assert new_code not in {old_code, sibling_code}
+    assert verify_access_code(str(db_path), "secret", old_code) is None
+    assert verify_access_code(str(db_path), "secret", sibling_code) is None
+    assert verify_access_code(str(db_path), "secret", new_code) == grant_id
+    assert get_access_grant(str(db_path), sibling_id) is None
 
 
 def test_access_grant_global_hourly_limit(tmp_path):

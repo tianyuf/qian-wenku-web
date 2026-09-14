@@ -28,6 +28,7 @@ from .access import (
     is_access_grant_active,
     issue_access_grant,
     normalize_email,
+    rotate_access_code,
     send_access_code,
     update_access_grant_email,
     verify_access_code,
@@ -275,6 +276,36 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             supplied_csrf = request.form.get("csrf_token", "")
             if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
                 error = "请刷新页面后重试。"
+            elif request.form.get("action") == "rotate_code":
+                rotated = rotate_access_code(
+                    app.config['ACCESS_DATABASE_PATH'],
+                    app.config['ACCESS_CODE_SECRET'],
+                    grant_id,
+                    app.config['ACCESS_CODE_TTL_DAYS'],
+                )
+                if rotated is None:
+                    session.clear()
+                    return redirect(url_for("login"))
+                else:
+                    new_code, expires_at = rotated
+                    refreshed_grant = get_access_grant(
+                        app.config['ACCESS_DATABASE_PATH'], grant_id
+                    )
+                    if refreshed_grant is None:
+                        session.clear()
+                        return redirect(url_for("login"))
+                    email = refreshed_grant[0]
+                    return render_template(
+                        'account.html',
+                        account_email=email,
+                        expiration=datetime.fromtimestamp(
+                            expires_at, timezone.utc
+                        ).strftime("%Y-%m-%d"),
+                        csrf_token=csrf_token,
+                        new_access_code=new_code,
+                        error=None,
+                        message=None,
+                    )
             else:
                 new_email = normalize_email(request.form.get("email", ""))
                 if not new_email:
