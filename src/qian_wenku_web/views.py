@@ -1357,6 +1357,8 @@ A remote MCP server pointing at this site. It has three tools:
   page references, plus prev/next/same-day navigation.
 - **list_sources**: list every volume with entry counts and year ranges, so you
   know what to filter by.
+- **list_favorites**: the user's favorited entries (needs their personal MCP
+  token), so the agent can work with a personal reading list.
 
 The server is hosted — nothing runs on your machine. Your agent calls it
 over HTTPS.
