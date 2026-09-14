@@ -14,15 +14,21 @@ Two modes:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import os
 from typing import Any, Optional
 
 import httpx
 from fastmcp import FastMCP
 
-from qian_wenku_web.access import verify_bearer_token
+from qian_wenku_web.access import resolve_mcp_token, verify_bearer_token
 
 DEFAULT_BASE_URL = "https://wenku.qianxuesen.org"
+
+# Bearer token of the caller, set by the hosted middleware per request.
+_caller_token: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "caller_token", default=""
+)
 
 # ---------------------------------------------------------------------------
 # HTTP client with beta auth
@@ -48,8 +54,17 @@ class WenkuClient:
             ),
         )
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        resp = self._client.get(path, params=params)
+    def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        user_authorization: str = "",
+    ) -> dict[str, Any]:
+        headers = (
+            {"X-User-Authorization": user_authorization} if user_authorization else {}
+        )
+        resp = self._client.get(path, params=params, headers=headers)
         resp.raise_for_status()
         return resp.json()
 
@@ -64,8 +79,9 @@ class WenkuClient:
 _SERVER_INSTRUCTIONS = """\
 Access to the Qian Xuesen (钱学森) corpus — nianpu (chronology), wenji
 (collected works), and shuxin (letters). Use `search` to find entries by
-text, `get_entry` for the full transcript of one entry, and `list_sources`
-to see the available volumes.
+text, `get_entry` for the full transcript of one entry, `list_sources`
+to see the available volumes, and `list_favorites` for the user's
+favorited entries (individual MCP token required).
 
 ## Citation rules (important)
 
@@ -248,6 +264,39 @@ def list_sources() -> dict[str, Any]:
     return {"sources": stats.get("sources", [])}
 
 
+@mcp.tool
+def list_favorites() -> dict[str, Any]:
+    """List the current user's favorited entries.
+
+    Only available on the hosted server when connected with an individual
+    MCP token. Returns each favorite's entry id, title, source, date, page,
+    permalink_url and citation, ordered newest first. Use get_entry on any
+    of the returned entry ids for the full transcript.
+    """
+    if not _service_token:
+        return {
+            "error": "favorites are only available on the hosted server "
+            "with an individual MCP token"
+        }
+    token = _caller_token.get()
+    if not token:
+        return {"error": "no user token; connect with your personal MCP token"}
+    payload = _client.get(
+        "/api/favorites",
+        user_authorization=f"Bearer {token}",
+    )
+    favorites = payload.get("favorites", [])
+    for favorite in favorites:
+        favorite["permalink_url"] = _permalink_url(favorite.get("permalink"))
+        favorite.pop("permalink", None)
+        favorite["citation"] = (
+            f"{favorite.get('source_title') or ''}，"
+            f"{favorite.get('title') or ''}，{favorite.get('date_display') or ''}，"
+            f"第{favorite.get('start_page')}页。"
+        )
+    return {"favorites": favorites, "total": payload.get("total", 0)}
+
+
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
@@ -285,7 +334,20 @@ def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):  # type: ignore[override]
             auth = request.headers.get("authorization", "")
-            valid = await asyncio.to_thread(
+            scheme, separator, value = auth.partition(" ")
+            is_individual = (
+                scheme.lower() == "bearer"
+                and separator
+                and access_db_path
+                and await asyncio.to_thread(
+                    resolve_mcp_token,
+                    access_db_path,
+                    access_code_secret,
+                    value,
+                )
+                is not None
+            )
+            valid = is_individual or await asyncio.to_thread(
                 verify_bearer_token,
                 auth,
                 operator_token,
@@ -294,6 +356,10 @@ def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
             )
             if not valid:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
+            if is_individual:
+                _caller_token.set(value)
+            else:
+                _caller_token.set("")
             return await call_next(request)
 
     asgi_app = mcp.http_app(path="/mcp/rpc")

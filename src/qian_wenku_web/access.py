@@ -685,12 +685,17 @@ def reinstate_account(path: str, grant_id: int) -> bool:
 
 def verify_mcp_token(path: str, secret: str, token: str) -> bool:
     """Validate an MCP token without requiring write access to the database."""
+    return resolve_mcp_token(path, secret, token) is not None
+
+
+def resolve_mcp_token(path: str, secret: str, token: str) -> int | None:
+    """Return the account grant id for an active MCP token, or None."""
     if not token.startswith(("qx_", "qxmcp_")) or len(token) > 128:
-        return False
+        return None
     with _read_only_connection(path) as connection:
         row = connection.execute(
             """
-            SELECT 1
+            SELECT mcp_tokens.grant_id
             FROM mcp_tokens
             JOIN access_grants ON access_grants.id = mcp_tokens.grant_id
             WHERE mcp_tokens.token_hash = ?
@@ -699,7 +704,7 @@ def verify_mcp_token(path: str, secret: str, token: str) -> bool:
             """,
             (_code_hash(secret, token),),
         ).fetchone()
-    return row is not None
+    return int(row[0]) if row else None
 
 
 def access_database_is_healthy(path: str) -> bool:

@@ -1247,6 +1247,30 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     border-top: 1px solid var(--border);
 }
 
+.favorites-view {
+    flex: 1;
+    overflow-y: auto;
+    display: grid;
+    place-items: start center;
+    padding: 1.5rem;
+    background: var(--bg);
+}
+
+.favorites-panel {
+    width: min(100%, 42rem);
+    padding: 2rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: 0 0.5rem 1.5rem rgba(36, 41, 35, 0.06);
+}
+
+.favorites-panel h1 {
+    margin: 0 0 1rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+}
+
 .favorite-row {
     display: flex;
     align-items: center;

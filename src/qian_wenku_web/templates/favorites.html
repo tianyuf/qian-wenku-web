@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block meta_description %}您的收藏条目{% endblock %}
+{% block title %}收藏 · 钱学森文库{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+
+{% block content %}
+<main class="favorites-view" id="main">
+    <section class="favorites-panel" aria-labelledby="favorites-title">
+        <span class="section-kicker">文库访问</span>
+        <h1 id="favorites-title">收藏</h1>
+
+        {% if favorites %}
+        <div class="favorites-list">
+            {% for fav in favorites %}
+            <div class="favorite-row">
+                <div>
+                    <a href="{{ url_for('views.entry_permalink', permalink=fav.permalink) }}">{{ fav.title }}</a>
+                    <span>{{ fav.source_title }} · {{ fav.date_display }} · 第 {{ fav.start_page }} 页</span>
+                </div>
+                <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-remove-form">
+                    <input type="hidden" name="entry_id" value="{{ fav.entry_id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">移除</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="login-description">暂无收藏。在条目页面点击“☆ 收藏”即可添加，收藏会保存在您的账户下。</p>
+        <a class="btn btn-primary" href="{{ url_for('views.index') }}">去搜索</a>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.favorite-remove-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var body = new URLSearchParams(new FormData(form));
+        fetch('/api/favorites', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        }).then(function() {
+            window.location.reload();
+        });
+    });
+});
+</script>
+{% endblock %}

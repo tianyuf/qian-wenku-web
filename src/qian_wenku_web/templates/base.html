@@ -41,6 +41,7 @@
                 <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
                 <div class="nav-spacer"></div>
                 {% if individual_account %}
+                <a class="nav-link {% if request.path == '/favorites' %}active{% endif %}" href="{{ url_for('favorites_page') }}">收藏</a>
                 <a class="nav-link {% if request.path == '/account' %}active{% endif %}" href="{{ url_for('account') }}">账户</a>
                 {% endif %}
                 {% if operator_session %}

@@ -43,6 +43,7 @@ from .access import (
     normalize_email,
     reinstate_account,
     request_email_change,
+    resolve_mcp_token,
     revoke_account,
     revoke_mcp_token,
     send_email_change_link,
@@ -412,6 +413,33 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 ).strftime("%Y-%m-%d")
 
         # Favorites with entry metadata for display.
+        favorites = _load_favorites(app, grant_id)
+
+        return render_template(
+            'account.html',
+            account_email=email,
+            pending_email=pending_email,
+            csrf_token=csrf_token,
+            error=error,
+            message=message,
+            mcp_tokens=mcp_tokens,
+            new_mcp_token=new_mcp_token,
+            favorites=favorites,
+        )
+
+    @app.route('/favorites')
+    def favorites_page():
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return redirect(url_for("views.index"))
+        favorites = _load_favorites(app, grant_id)
+        return render_template(
+            'favorites.html',
+            favorites=favorites,
+        )
+
+    def _load_favorites(app, grant_id):
+        """Entry metadata for an account's favorites, newest first."""
         favorites = []
         with NianpuDatabase(app.config['DATABASE_PATH']) as fav_db:
             for fav in list_favorites(app.config['ACCESS_DATABASE_PATH'], grant_id):
@@ -442,18 +470,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     "source_title": row["source_title"],
                     "start_page": row["start_page"],
                 })
-
-        return render_template(
-            'account.html',
-            account_email=email,
-            pending_email=pending_email,
-            csrf_token=csrf_token,
-            error=error,
-            message=message,
-            mcp_tokens=mcp_tokens,
-            new_mcp_token=new_mcp_token,
-            favorites=favorites,
-        )
+        return favorites
 
     @app.route('/account/email-change')
     def email_change_confirm():
@@ -634,6 +651,41 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             app.config['ACCESS_DATABASE_PATH'], grant_id, entry_id
         )
         return jsonify({"favorited": favorited})
+
+    @app.route('/api/favorites')
+    def favorites_api():
+        """List the caller's favorites; requires an individual MCP token.
+
+        Accepts either the user's own Bearer token directly, or the
+        service token (X-Service-Token) with the user's token forwarded
+        in X-User-Authorization (used by the hosted MCP server).
+        """
+        user_token = ""
+        if app.config['WENKU_SERVICE_TOKEN'] and hmac.compare_digest(
+            request.headers.get("X-Service-Token", "").encode(),
+            app.config['WENKU_SERVICE_TOKEN'].encode(),
+        ):
+            forwarded = request.headers.get("X-User-Authorization", "")
+            scheme, separator, value = forwarded.partition(" ")
+            if scheme.lower() == "bearer" and separator:
+                user_token = value
+        else:
+            authorization = request.headers.get("Authorization", "")
+            scheme, separator, value = authorization.partition(" ")
+            if scheme.lower() == "bearer" and separator:
+                user_token = value
+        if not user_token or not app.config['ACCESS_DATABASE_PATH']:
+            return jsonify({"error": "Authentication required"}), 401
+        grant_id = resolve_mcp_token(
+            app.config['ACCESS_DATABASE_PATH'],
+            app.config['ACCESS_CODE_SECRET'],
+            user_token,
+        )
+        if grant_id is None:
+            return jsonify({"error": "Authentication required"}), 401
+
+        favorites = _load_favorites(app, grant_id)
+        return jsonify({"favorites": favorites, "total": len(favorites)})
 
     @app.errorhandler(500)
     def internal_error(error):
