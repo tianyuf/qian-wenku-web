@@ -22,7 +22,7 @@ async def test_tools_registered():
     async with Client(mcp) as c:
         tools = await c.list_tools()
         names = sorted(t.name for t in tools)
-        assert names == ["get_entry", "list_favorites", "list_sources", "search"]
+        assert names == ["get_entry", "list_favorites", "list_notes", "list_sources", "search"]
 
 
 def test_base_url_and_service_token_env(monkeypatch):

@@ -696,3 +696,111 @@ def test_favorites_api_with_mcp_token(artifact_dir, tmp_path, monkeypatch):
     assert denied.status_code == 401
     # No token rejected.
     assert client.get("/api/favorites").status_code == 401
+
+
+def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("WENKU_SERVICE_TOKEN", "fixture-service-token")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Reader@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = 1
+        session.permanent = True
+
+    # Entry page shows the notes section.
+    entry_text = client.get("/e/nianpu-19111211-a").get_data(as_text=True)
+    assert "我的批注" in entry_text
+
+    # Anonymous users cannot annotate.
+    anon = app.test_client()
+    assert anon.post("/api/notes", data={"entry_id": "1", "body": "x"}).status_code == 401
+
+    # Add a note with a highlight quote.
+    created = client.post(
+        "/api/notes",
+        data={"entry_id": "1", "body": "这一段很重要", "quote": "合成"},
+    )
+    assert created.status_code == 201
+    note_id = created.get_json()["note_id"]
+
+    listed = client.get("/api/notes?entry_id=1")
+    notes = listed.get_json()["notes"]
+    assert len(notes) == 1
+    assert notes[0]["body"] == "这一段很重要"
+    assert notes[0]["quote"] == "合成"
+
+    # Server-rendered page shows the note.
+    page_text = client.get("/e/nianpu-19111211-a").get_data(as_text=True)
+    assert "这一段很重要" in page_text
+    assert "「合成」" in page_text
+
+    # Update the note.
+    updated = client.put(
+        f"/api/notes/{note_id}", data={"body": "更新后的批注"}
+    )
+    assert updated.get_json() == {"updated": True}
+    assert client.get("/api/notes?entry_id=1").get_json()["notes"][0]["body"] == "更新后的批注"
+
+    # Validation: empty body rejected.
+    assert client.put(f"/api/notes/{note_id}", data={"body": " "}).status_code == 400
+
+    # Delete the note.
+    deleted = client.delete(f"/api/notes/{note_id}")
+    assert deleted.get_json() == {"deleted": True}
+    assert client.get("/api/notes?entry_id=1").get_json()["total"] == 0
+
+    # Another account cannot touch it.
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Other@example.com', 'x', '2026-09', strftime('%s','now'))"
+        )
+        other_id = connection.execute(
+            "SELECT id FROM access_grants WHERE email = 'Other@example.com'"
+        ).fetchone()[0]
+    recreated = client.post(
+        "/api/notes", data={"entry_id": "1", "body": "keep"}
+    ).get_json()
+    with client.session_transaction() as session:
+        session["access_grant_id"] = other_id
+    forbidden = client.delete(f"/api/notes/{recreated['note_id']}")
+    assert forbidden.status_code == 404
+
+    # MCP token path: create a token, list notes forwarded.
+    from qian_wenku_web.access import create_mcp_token
+    _, mcp_token = create_mcp_token(
+        str(access_db), "fixture-access-secret", 1, "Claude"
+    )
+    with client.session_transaction() as session:
+        session["access_grant_id"] = 1
+    forwarded = client.get(
+        "/api/notes",
+        headers={
+            "X-Service-Token": "fixture-service-token",
+            "X-User-Authorization": f"Bearer {mcp_token}",
+        },
+    )
+    assert forwarded.status_code == 200
+    assert forwarded.get_json()["total"] >= 1

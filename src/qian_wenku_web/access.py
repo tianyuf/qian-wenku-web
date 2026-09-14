@@ -521,6 +521,161 @@ def is_favorite(path: str, grant_id: int, entry_id: int) -> bool:
     return row is not None
 
 
+def initialize_notes(path: str) -> None:
+    """Create the entry-notes table inside the access-grant store."""
+    with sqlite3.connect(path, timeout=10) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS entry_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                grant_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL,
+                quote TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS entry_notes_entry_idx "
+            "ON entry_notes(grant_id, entry_id, created_at)"
+        )
+
+
+MAX_NOTE_BODY = 5000
+MAX_NOTE_QUOTE = 500
+
+
+def add_entry_note(
+    path: str,
+    grant_id: int,
+    entry_id: int,
+    body: str,
+    quote: str = "",
+) -> int | None:
+    """Attach one comment (optionally quoting a highlight) to an entry."""
+    body = body.strip()
+    quote = quote.strip()
+    if not body or len(body) > MAX_NOTE_BODY:
+        raise ValueError("note body must be 1-5000 characters")
+    if len(quote) > MAX_NOTE_QUOTE:
+        raise ValueError("note quote must be at most 500 characters")
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        active = connection.execute(
+            "SELECT 1 FROM access_grants WHERE id = ? AND revoked_at IS NULL",
+            (grant_id,),
+        ).fetchone()
+        if not active:
+            return None
+        cursor = connection.execute(
+            """
+            INSERT INTO entry_notes
+                (grant_id, entry_id, quote, body, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (grant_id, entry_id, quote, body, now, now),
+        )
+        return int(cursor.lastrowid)
+
+
+def update_entry_note(
+    path: str, grant_id: int, note_id: int, body: str, quote: str | None = None
+) -> bool:
+    """Edit one note's text (and optionally its highlight quote)."""
+    body = body.strip()
+    if not body or len(body) > MAX_NOTE_BODY:
+        raise ValueError("note body must be 1-5000 characters")
+    with sqlite3.connect(path, timeout=5) as connection:
+        sets = ["body = ?", "updated_at = ?"]
+        params: list[object] = [body, int(time.time())]
+        if quote is not None:
+            quote = quote.strip()
+            if len(quote) > MAX_NOTE_QUOTE:
+                raise ValueError("note quote must be at most 500 characters")
+            sets.append("quote = ?")
+            params.append(quote)
+        params.extend([note_id, grant_id])
+        cursor = connection.execute(
+            f"UPDATE entry_notes SET {', '.join(sets)} "
+            "WHERE id = ? AND grant_id = ?",
+            params,
+        )
+    return cursor.rowcount == 1
+
+
+def delete_entry_note(path: str, grant_id: int, note_id: int) -> bool:
+    """Delete one note belonging to the account."""
+    with sqlite3.connect(path, timeout=5) as connection:
+        cursor = connection.execute(
+            "DELETE FROM entry_notes WHERE id = ? AND grant_id = ?",
+            (note_id, grant_id),
+        )
+    return cursor.rowcount == 1
+
+
+def list_entry_notes(path: str, grant_id: int, entry_id: int) -> list[dict[str, object]]:
+    """List one account's notes on one entry, oldest first."""
+    with _read_only_connection(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, quote, body, created_at, updated_at
+            FROM entry_notes
+            WHERE grant_id = ? AND entry_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (grant_id, entry_id),
+        ).fetchall()
+    return [
+        {
+            "id": int(row[0]),
+            "quote": str(row[1] or ""),
+            "body": str(row[2]),
+            "created_at": int(row[3]),
+            "updated_at": int(row[4]),
+        }
+        for row in rows
+    ]
+
+
+def list_entry_notes_all(
+    path: str, grant_id: int, limit: int = 200, offset: int = 0
+) -> list[dict[str, object]]:
+    """List all of an account's notes across entries, newest first."""
+    with _read_only_connection(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, entry_id, quote, body, created_at, updated_at
+            FROM entry_notes
+            WHERE grant_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (grant_id, limit, offset),
+        ).fetchall()
+    return [
+        {
+            "id": int(row[0]),
+            "entry_id": int(row[1]),
+            "quote": str(row[2] or ""),
+            "body": str(row[3]),
+            "created_at": int(row[4]),
+            "updated_at": int(row[5]),
+        }
+        for row in rows
+    ]
+
+
+def count_entry_notes(path: str, grant_id: int) -> int:
+    """Total number of notes for an account."""
+    with _read_only_connection(path) as connection:
+        return int(connection.execute(
+            "SELECT COUNT(*) FROM entry_notes WHERE grant_id = ?", (grant_id,)
+        ).fetchone()[0])
+
+
 def create_mcp_token(
     path: str,
     secret: str,

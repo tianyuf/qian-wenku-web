@@ -241,6 +241,36 @@
         </div>
     </div>
 
+    {% if individual_account %}
+    <div class="entry-notes" id="entry-notes" data-entry-id="{{ entry.id }}">
+        <div class="citation-label">我的批注</div>
+        <div class="entry-notes-list" id="entry-notes-list">
+            {% for note in entry_notes %}
+            <div class="entry-note" data-note-id="{{ note.id }}">
+                {% if note.quote %}<blockquote class="entry-note-quote">「{{ note.quote }}」</blockquote>{% endif %}
+                <div class="entry-note-body">{{ note.body }}</div>
+                <div class="entry-note-meta">
+                    {{ note.created_display }}{% if note.edited_display %} · 编辑于 {{ note.edited_display }}{% endif %}
+                    <button type="button" class="btn btn-sm btn-link entry-note-delete">删除</button>
+                </div>
+            </div>
+            {% else %}
+            <p class="text-muted small mb-0" id="entry-notes-empty">暂无批注。选中正文文字可添加引用，或直接写评论。</p>
+            {% endfor %}
+        </div>
+        <div class="entry-note-form mt-2">
+            <blockquote class="entry-note-quote d-none" id="note-quote-preview"></blockquote>
+            <input type="hidden" id="note-quote" value="">
+            <textarea class="form-control form-control-sm" id="note-body" rows="3"
+                      maxlength="5000" placeholder="写下批注…（可选：先选中正文文字再点击添加）"></textarea>
+            <div class="d-flex align-items-center gap-2 mt-2">
+                <button type="button" class="btn btn-sm btn-primary" id="note-submit">添加批注</button>
+                <span class="text-muted small" id="note-hint"></span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if next_entry and next_entry.permalink %}
     <div id="continuous-reader" style="padding: 1rem 1.5rem; text-align:center;">
         <button class="btn btn-sm btn-outline-secondary" id="continuous-toggle"
@@ -281,6 +311,101 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function() {
+    var notesBox = document.getElementById('entry-notes');
+    if (!notesBox) return;
+    var entryId = notesBox.getAttribute('data-entry-id');
+    var list = document.getElementById('entry-notes-list');
+    var bodyInput = document.getElementById('note-body');
+    var quoteInput = document.getElementById('note-quote');
+    var quotePreview = document.getElementById('note-quote-preview');
+    var hint = document.getElementById('note-hint');
+
+    // Capture text selection inside the entry content as a highlight quote.
+    var contentArea = document.querySelector('.content-center') || document.body;
+    document.addEventListener('mouseup', function(e) {
+        if (e.target.closest('#entry-notes') || e.target.closest('#continuous-container')) return;
+        var sel = window.getSelection();
+        var text = sel ? String(sel).trim() : '';
+        if (text && text.length <= 500 && sel.anchorNode && contentArea.contains(sel.anchorNode)) {
+            quoteInput.value = text;
+            quotePreview.textContent = '「' + text + '」';
+            quotePreview.classList.remove('d-none');
+            hint.textContent = '已引用选中文字';
+        } else if (!text) {
+            quoteInput.value = '';
+            quotePreview.classList.add('d-none');
+            hint.textContent = '';
+        }
+    });
+
+    function esc(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function refreshNotes() {
+        fetch('/api/notes?entry_id=' + entryId).then(function(r) {
+            if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; }
+            return r.json();
+        }).then(function(data) {
+            if (!data) return;
+            list.innerHTML = '';
+            if (!data.notes.length) {
+                list.innerHTML = '<p class="text-muted small mb-0" id="entry-notes-empty">暂无批注。</p>';
+                return;
+            }
+            data.notes.forEach(function(note) {
+                var div = document.createElement('div');
+                div.className = 'entry-note';
+                div.setAttribute('data-note-id', note.id);
+                var quote = note.quote ? '<blockquote class="entry-note-quote">「' + esc(note.quote) + '」</blockquote>' : '';
+                div.innerHTML = (quote || '') +
+                    '<div class="entry-note-body">' + esc(note.body).replace(/\n/g,'<br>') + '</div>' +
+                    '<div class="entry-note-meta"><button type="button" class="btn btn-sm btn-link entry-note-delete">删除</button></div>';
+                list.appendChild(div);
+            });
+        });
+    }
+
+    document.getElementById('note-submit').addEventListener('click', function() {
+        var text = bodyInput.value.trim();
+        if (!text) { hint.textContent = '请输入批注内容。'; return; }
+        var body = new URLSearchParams({ entry_id: entryId, body: text, quote: quoteInput.value });
+        fetch('/api/notes', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        }).then(function(r) {
+            if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; }
+            return r.json();
+        }).then(function(data) {
+            if (!data) return;
+            if (data.error) { hint.textContent = data.error; return; }
+            bodyInput.value = '';
+            quoteInput.value = '';
+            quotePreview.classList.add('d-none');
+            hint.textContent = '已添加。';
+            refreshNotes();
+        });
+    });
+
+    list.addEventListener('click', function(e) {
+        var btn = e.target.closest('.entry-note-delete');
+        if (!btn) return;
+        if (!window.confirm('确定删除这条批注吗？')) return;
+        var noteDiv = btn.closest('.entry-note');
+        var noteId = noteDiv.getAttribute('data-note-id');
+        fetch('/api/notes/' + noteId, { method: 'DELETE' }).then(function(r) {
+            if (r.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return null; }
+            return r.json();
+        }).then(function(data) {
+            if (!data) return;
+            if (data.deleted) noteDiv.remove();
+        });
+    });
+})();
+</script>
 <script>
 function toggleFavorite(btn) {
     var entryId = btn.getAttribute('data-entry-id');

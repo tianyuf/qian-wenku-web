@@ -1282,6 +1282,51 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     font-weight: 700;
 }
 
+/* Entry notes (annotations) */
+.entry-notes {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-muted);
+}
+
+.entry-note {
+    padding: 0.65rem 0.75rem;
+    margin-top: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+}
+
+.entry-note-quote {
+    margin: 0 0 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+    font-size: 0.85rem;
+}
+
+.entry-note-body {
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+}
+
+.entry-note-meta {
+    margin-top: 0.35rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.entry-note-delete {
+    padding: 0 0.25rem;
+    color: #a13f35;
+}
+
 .favorite-row {
     display: flex;
     align-items: center;

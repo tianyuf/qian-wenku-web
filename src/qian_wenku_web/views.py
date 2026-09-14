@@ -30,6 +30,31 @@ def _entry_is_favorited(entry_id):
         return False
 
 
+def _entry_notes(entry_id):
+    """Return the current session's notes on an entry."""
+    from flask import session
+    from datetime import datetime, timezone
+    from .access import list_entry_notes
+    access_db_path = current_app.config.get('ACCESS_DATABASE_PATH', '')
+    grant_id = session.get("access_grant_id")
+    if grant_id is None or not access_db_path:
+        return []
+    try:
+        notes = list_entry_notes(access_db_path, grant_id, entry_id)
+    except Exception:
+        current_app.logger.exception("Entry notes lookup failed")
+        return []
+    for note in notes:
+        note["created_display"] = datetime.fromtimestamp(
+            int(note["created_at"]), timezone.utc
+        ).strftime("%Y-%m-%d %H:%M")
+        if note["updated_at"] != note["created_at"]:
+            note["edited_display"] = datetime.fromtimestamp(
+                int(note["updated_at"]), timezone.utc
+            ).strftime("%Y-%m-%d %H:%M")
+    return notes
+
+
 @contextmanager
 def get_db():
     """Context manager for database connections."""
@@ -905,7 +930,8 @@ def _render_entry_detail(entry_id):
                            recipients=recipients,
                            duplicates=duplicates,
                            own_entities=own_entities,
-                           favorited=_entry_is_favorited(entry_id))
+                           favorited=_entry_is_favorited(entry_id),
+                           entry_notes=_entry_notes(entry_id))
 
 
 @views_bp.route('/browse/recipients')

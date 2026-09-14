@@ -80,8 +80,9 @@ _SERVER_INSTRUCTIONS = """\
 Access to the Qian Xuesen (钱学森) corpus — nianpu (chronology), wenji
 (collected works), and shuxin (letters). Use `search` to find entries by
 text, `get_entry` for the full transcript of one entry, `list_sources`
-to see the available volumes, and `list_favorites` for the user's
-favorited entries (individual MCP token required).
+to see the available volumes, `list_favorites` for the user's
+favorited entries, and `list_notes` for the user's annotations on
+entries (both require an individual MCP token).
 
 ## Citation rules (important)
 
@@ -295,6 +296,29 @@ def list_favorites() -> dict[str, Any]:
             f"第{favorite.get('start_page')}页。"
         )
     return {"favorites": favorites, "total": payload.get("total", 0)}
+
+
+@mcp.tool
+def list_notes(entry_id: Optional[int] = None) -> dict[str, Any]:
+    """List the current user's annotations (comments on entries).
+
+    Only available on the hosted server when connected with an individual
+    MCP token. Without entry_id returns all notes across entries, newest
+    first. Each note has: entry_id, quote (the highlighted text, if any),
+    body, and timestamps. Use get_entry on entry_id for the full context.
+    """
+    if not _service_token:
+        return {
+            "error": "notes are only available on the hosted server "
+            "with an individual MCP token"
+        }
+    token = _caller_token.get()
+    if not token:
+        return {"error": "no user token; connect with your personal MCP token"}
+    params: dict[str, Any] = {}
+    if entry_id is not None:
+        params["entry_id"] = entry_id
+    return _client.get("/api/notes", params=params, user_authorization=f"Bearer {token}")
 
 
 # ---------------------------------------------------------------------------

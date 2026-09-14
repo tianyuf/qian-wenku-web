@@ -24,20 +24,25 @@ from .formatting import format_date_chinese
 from .access import (
     AccessRequestLimitError,
     EmailDeliveryError,
+    add_entry_note,
     access_database_is_healthy,
     count_all_accounts,
     consume_magic_link,
     consume_email_change,
     cancel_email_change,
     create_mcp_token,
+    delete_entry_note,
     delete_magic_link,
     get_access_grant,
     get_pending_email,
     initialize_access_database,
     initialize_favorites,
+    initialize_notes,
     is_access_grant_active,
     issue_magic_link,
     list_all_accounts,
+    list_entry_notes,
+    list_entry_notes_all,
     list_favorites,
     list_mcp_tokens,
     normalize_email,
@@ -50,6 +55,7 @@ from .access import (
     send_magic_link,
     send_token_revoked_notice,
     toggle_favorite,
+    update_entry_note,
     verify_turnstile,
 )
 
@@ -111,6 +117,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     if app.config['ACCESS_DATABASE_PATH']:
         initialize_access_database(app.config['ACCESS_DATABASE_PATH'])
         initialize_favorites(app.config['ACCESS_DATABASE_PATH'])
+        initialize_notes(app.config['ACCESS_DATABASE_PATH'])
     auth_enabled = bool(
         app.config['ACCESS_DATABASE_PATH'] or app.config['WENKU_SERVICE_TOKEN']
     )
@@ -682,6 +689,98 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
         favorites = _load_favorites(app, grant_id)
         return jsonify({"favorites": favorites, "total": len(favorites)})
+
+    def _current_grant_or_401():
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return None
+        return grant_id
+
+    def _json_notes(grant_id, entry_id):
+        notes = list_entry_notes(
+            app.config['ACCESS_DATABASE_PATH'], grant_id, entry_id
+        )
+        return jsonify({"notes": notes, "total": len(notes)})
+
+    @app.route('/api/notes', methods=['POST'])
+    def note_create():
+        grant_id = _current_grant_or_401()
+        if grant_id is None:
+            return jsonify({"error": "Authentication required"}), 401
+        try:
+            entry_id = int(request.form.get("entry_id", ""))
+        except ValueError:
+            return jsonify({"error": "Invalid entry"}), 400
+        try:
+            note_id = add_entry_note(
+                app.config['ACCESS_DATABASE_PATH'],
+                grant_id,
+                entry_id,
+                request.form.get("body", ""),
+                request.form.get("quote", ""),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if note_id is None:
+            return jsonify({"error": "Authentication required"}), 401
+        return jsonify({"note_id": note_id}), 201
+
+    @app.route('/api/notes/<int:note_id>', methods=['PUT', 'DELETE'])
+    def note_modify(note_id):
+        grant_id = _current_grant_or_401()
+        if grant_id is None:
+            return jsonify({"error": "Authentication required"}), 401
+        if request.method == 'DELETE':
+            if delete_entry_note(
+                app.config['ACCESS_DATABASE_PATH'], grant_id, note_id
+            ):
+                return jsonify({"deleted": True})
+            return jsonify({"error": "Note not found"}), 404
+        try:
+            updated = update_entry_note(
+                app.config['ACCESS_DATABASE_PATH'],
+                grant_id,
+                note_id,
+                request.form.get("body", ""),
+                request.form.get("quote"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not updated:
+            return jsonify({"error": "Note not found"}), 404
+        return jsonify({"updated": True})
+
+    @app.route('/api/notes')
+    def notes_api():
+        """List the caller's notes across entries; MCP-token aware."""
+        grant_id = None
+        if app.config['WENKU_SERVICE_TOKEN'] and hmac.compare_digest(
+            request.headers.get("X-Service-Token", "").encode(),
+            app.config['WENKU_SERVICE_TOKEN'].encode(),
+        ):
+            forwarded = request.headers.get("X-User-Authorization", "")
+            scheme, separator, value = forwarded.partition(" ")
+            if scheme.lower() != "bearer" or not separator:
+                return jsonify({"error": "Authentication required"}), 401
+            grant_id = resolve_mcp_token(
+                app.config['ACCESS_DATABASE_PATH'],
+                app.config['ACCESS_CODE_SECRET'],
+                value,
+            )
+        else:
+            grant_id = _current_grant_or_401()
+        if grant_id is None:
+            return jsonify({"error": "Authentication required"}), 401
+        entry_id = request.args.get("entry_id")
+        if entry_id:
+            try:
+                return _json_notes(grant_id, int(entry_id))
+            except ValueError:
+                return jsonify({"error": "Invalid entry"}), 400
+        notes = list_entry_notes_all(
+            app.config['ACCESS_DATABASE_PATH'], grant_id
+        )
+        return jsonify({"notes": notes, "total": len(notes)})
 
     @app.errorhandler(500)
     def internal_error(error):
