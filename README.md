@@ -10,7 +10,7 @@ A read-only web application for exploring archival materials pertaining to the C
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
 
 [🌐 Live site](https://wenku.qianxuesen.org/) ·
-[📬 Request access](mailto:mail@qianxuesen.org)
+[📬 Request access](https://wenku.qianxuesen.org/request-access)
 
 </div>
 
@@ -26,7 +26,7 @@ A read-only web application for exploring archival materials pertaining to the C
 
 ## 📬 Access
 
-For access to the corpus or the site, contact <mail@qianxuesen.org>.
+Request an individual 90-day access code at <https://wenku.qianxuesen.org/request-access>.
 
 ## ⚖️ Licensing
 
@@ -82,14 +82,23 @@ All configuration is via environment variables (not loaded from `.env` files by 
 |---|---|
 | `WENKU_ARTIFACT_DIR` | Path to the artifact directory |
 | `R2_CDN_BASE` / `R2_PREFIX` | Where page scans are served from |
-| `BETA_PASSPHRASE` | If set, visitors must enter this passphrase (private beta mode); if empty, login protection is disabled |
-| `SECRET_KEY` / `SESSION_COOKIE_SECURE` | Required when beta mode is on |
+| `BETA_PASSPHRASE` | Optional operator fallback credential; access control is also enabled when `ACCESS_DATABASE_PATH` is set |
+| `SECRET_KEY` / `SESSION_COOKIE_SECURE` | Session signing key and secure-cookie switch; required when access control is enabled |
+| `ACCESS_DATABASE_PATH` / `ACCESS_CODE_SECRET` | Writable grant database and secret used to hash individual access codes |
+| `ACCESS_CODE_TTL_DAYS` / `ACCESS_HOURLY_LIMIT` | Grant lifetime and global issuance ceiling |
+| `ACCESS_TERMS_VERSION` | Accepted archive-use terms version stored with each grant |
+| `RESEND_API_KEY` / `ACCESS_FROM_EMAIL` | Resend credentials for automatic code delivery; keep the API key out of source control |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile credentials required for the public request form |
+| `PUBLIC_BASE_URL` | Public archive origin used in access-code emails |
+| `WENKU_MCP_TOKEN` | Optional operator fallback token for the hosted MCP endpoint |
+| `WENKU_BETA_PASSPHRASE` | Service credential used by the MCP process to call the protected web API |
 
 ### Routes
 
 | Route | Purpose |
 |---|---|
 | `/`, `/search/results` | Search UI and HTMX results |
+| `/login`, `/request-access` | Access-code login and automatic 90-day grant requests |
 | `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
 | `/e/<permalink>` | Canonical entry page |
 | `/browse/recipients`, `/browse/entities` | Relationship directories |
@@ -108,7 +117,7 @@ Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepar
 
 ### MCP server (for AI agents)
 
-A hosted MCP endpoint is exposed at `https://wenku.qianxuesen.org/mcp/rpc` for AI clients (Claude Desktop, etc.). The bearer token is the same beta passphrase as the website — request access at <mail@qianxuesen.org>.
+A hosted MCP endpoint is exposed at `https://wenku.qianxuesen.org/mcp/rpc` for AI clients (Claude Desktop, etc.). Each individual access code works as both the website login credential and MCP bearer token. Codes are available from `https://wenku.qianxuesen.org/request-access`.
 
 ```json
 {

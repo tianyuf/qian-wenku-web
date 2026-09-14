@@ -4,7 +4,8 @@
 import os
 import logging
 import hmac
-from datetime import timedelta
+import secrets
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from flask import (
@@ -18,6 +19,20 @@ from flask import (
 )
 
 from .database import NianpuDatabase
+from .access import (
+    AccessRequestLimitError,
+    EmailDeliveryError,
+    access_database_is_healthy,
+    get_access_grant,
+    initialize_access_database,
+    is_access_grant_active,
+    issue_access_grant,
+    normalize_email,
+    send_access_code,
+    update_access_grant_email,
+    verify_access_code,
+    verify_turnstile,
+)
 
 
 def create_app(db_path=None, mapping_path=None, manifest_path=None):
@@ -40,6 +55,26 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         f"{app.config['R2_CDN_BASE'].rstrip('/')}/{app.config['R2_PREFIX'].strip('/')}"
     )
     app.config['BETA_PASSPHRASE'] = os.getenv("BETA_PASSPHRASE", "")
+    app.config['ACCESS_DATABASE_PATH'] = os.getenv("ACCESS_DATABASE_PATH", "")
+    app.config['ACCESS_CODE_SECRET'] = os.getenv("ACCESS_CODE_SECRET", "")
+    app.config['ACCESS_CODE_TTL_DAYS'] = int(os.getenv("ACCESS_CODE_TTL_DAYS", "90"))
+    app.config['ACCESS_HOURLY_LIMIT'] = int(os.getenv("ACCESS_HOURLY_LIMIT", "100"))
+    app.config['ACCESS_TERMS_VERSION'] = os.getenv("ACCESS_TERMS_VERSION", "2026-09")
+    app.config['RESEND_API_KEY'] = os.getenv("RESEND_API_KEY", "")
+    app.config['TURNSTILE_SITE_KEY'] = os.getenv("TURNSTILE_SITE_KEY", "")
+    app.config['TURNSTILE_SECRET_KEY'] = os.getenv("TURNSTILE_SECRET_KEY", "")
+    app.config['TURNSTILE_HOSTNAMES'] = {
+        hostname.strip()
+        for hostname in os.getenv("TURNSTILE_HOSTNAMES", "").split(",")
+        if hostname.strip()
+    }
+    app.config['ACCESS_FROM_EMAIL'] = os.getenv(
+        "ACCESS_FROM_EMAIL",
+        "qianxuesen.org <no-reply@send.fangemail.com>",
+    )
+    app.config['PUBLIC_BASE_URL'] = os.getenv(
+        "PUBLIC_BASE_URL", "https://wenku.qianxuesen.org"
+    )
     app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "")
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
@@ -48,8 +83,15 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         in {"1", "true", "yes"},
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     )
-    if app.config['BETA_PASSPHRASE'] and not app.config['SECRET_KEY']:
-        raise RuntimeError("SECRET_KEY is required when beta authentication is enabled")
+    if app.config['ACCESS_DATABASE_PATH'] and not app.config['ACCESS_CODE_SECRET']:
+        raise RuntimeError("ACCESS_CODE_SECRET is required for individual access codes")
+    if app.config['ACCESS_DATABASE_PATH']:
+        initialize_access_database(app.config['ACCESS_DATABASE_PATH'])
+    auth_enabled = bool(
+        app.config['BETA_PASSPHRASE'] or app.config['ACCESS_DATABASE_PATH']
+    )
+    if auth_enabled and not app.config['SECRET_KEY']:
+        raise RuntimeError("SECRET_KEY is required when access control is enabled")
 
     from .api.search import search_bp
     from .api.browse import browse_bp
@@ -72,34 +114,191 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.before_request
     def require_beta_login():
-        if not app.config['BETA_PASSPHRASE']:
+        if not auth_enabled:
             return None
-        if request.endpoint in {"login", "static", "health_check"}:
+        if request.endpoint in {"login", "request_access", "static", "health_check"}:
             return None
         # Public AI install doc: no auth required so chat harnesses can fetch it.
         if request.path == "/mcp/install.md":
             return None
         if session.get("beta_authenticated"):
-            return None
+            grant_id = session.get("access_grant_id")
+            if grant_id is None and app.config['BETA_PASSPHRASE']:
+                return None
+            if grant_id is not None and app.config['ACCESS_DATABASE_PATH']:
+                if is_access_grant_active(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                    return None
+            session.clear()
         if request.path.startswith("/api/"):
             return jsonify({"error": "Authentication required"}), 401
         return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
-        if not app.config['BETA_PASSPHRASE']:
+        if not auth_enabled:
             return redirect(url_for("views.index"))
         error = None
         next_url = safe_next_url(request.values.get("next"))
         if request.method == 'POST':
             supplied = request.form.get("passphrase", "")
-            if hmac.compare_digest(supplied, app.config['BETA_PASSPHRASE']):
+            grant_id = None
+            if app.config['ACCESS_DATABASE_PATH']:
+                grant_id = verify_access_code(
+                    app.config['ACCESS_DATABASE_PATH'],
+                    app.config['ACCESS_CODE_SECRET'],
+                    supplied,
+                    mark_used=True,
+                )
+            fallback_valid = bool(app.config['BETA_PASSPHRASE']) and hmac.compare_digest(
+                supplied.encode(), app.config['BETA_PASSPHRASE'].encode()
+            )
+            if grant_id is not None or fallback_valid:
                 session.clear()
                 session["beta_authenticated"] = True
+                if grant_id is not None:
+                    session["access_grant_id"] = grant_id
                 session.permanent = True
                 return redirect(next_url)
-            error = "Incorrect passphrase"
+            error = "访问码不正确或已过期"
         return render_template('login.html', error=error, next_url=next_url)
+
+    @app.route('/request-access', methods=['GET', 'POST'])
+    def request_access():
+        requests_enabled = bool(
+            app.config['ACCESS_DATABASE_PATH']
+            and app.config['RESEND_API_KEY']
+            and app.config['ACCESS_FROM_EMAIL']
+            and app.config['TURNSTILE_SITE_KEY']
+            and app.config['TURNSTILE_SECRET_KEY']
+            and app.config['TURNSTILE_HOSTNAMES']
+        )
+        if not requests_enabled:
+            return render_template('request_access.html', unavailable=True), 503
+
+        csrf_token = session.get("access_request_csrf")
+        if not csrf_token:
+            csrf_token = secrets.token_urlsafe(24)
+            session["access_request_csrf"] = csrf_token
+
+        error = None
+        submitted = False
+        if request.method == 'POST':
+            supplied_csrf = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
+                error = "请刷新页面后重试。"
+            elif request.form.get("website"):
+                submitted = True
+            elif not verify_turnstile(
+                app.config['TURNSTILE_SECRET_KEY'],
+                request.form.get("cf-turnstile-response", ""),
+                request.headers.get("CF-Connecting-IP", request.remote_addr),
+                "request_access",
+                app.config['TURNSTILE_HOSTNAMES'],
+            ):
+                error = "请完成人机验证后重试。"
+            elif not request.form.get("accept_terms"):
+                error = "请先勾选同意文库使用条款。"
+            else:
+                email = normalize_email(request.form.get("email", ""))
+                if not email:
+                    error = "请输入有效的邮箱地址。"
+                else:
+                    try:
+                        grant = issue_access_grant(
+                            app.config['ACCESS_DATABASE_PATH'],
+                            app.config['ACCESS_CODE_SECRET'],
+                            email,
+                            app.config['ACCESS_TERMS_VERSION'],
+                            app.config['ACCESS_CODE_TTL_DAYS'],
+                            hourly_limit=app.config['ACCESS_HOURLY_LIMIT'],
+                        )
+                    except AccessRequestLimitError:
+                        return render_template(
+                            'request_access.html',
+                            csrf_token=csrf_token,
+                            error="访问申请较多，请稍后再试。",
+                            submitted=False,
+                            unavailable=False,
+                            ttl_days=app.config['ACCESS_CODE_TTL_DAYS'],
+                        ), 429
+                    if grant is not None:
+                        grant_id, code, expires_at = grant
+                        try:
+                            send_access_code(
+                                app.config['RESEND_API_KEY'],
+                                app.config['ACCESS_FROM_EMAIL'],
+                                email,
+                                code,
+                                expires_at,
+                                grant_id,
+                                app.config['PUBLIC_BASE_URL'],
+                            )
+                        except EmailDeliveryError:
+                            app.logger.exception("Access-code email delivery failed")
+                            error = (
+                                "Delivery could not be confirmed. Check your email before "
+                                "trying again."
+                            )
+                    if error is None:
+                        submitted = True
+
+        return render_template(
+            'request_access.html',
+            csrf_token=csrf_token,
+            error=error,
+            submitted=submitted,
+            unavailable=False,
+            ttl_days=app.config['ACCESS_CODE_TTL_DAYS'],
+            turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
+        )
+
+    @app.route('/account', methods=['GET', 'POST'])
+    def account():
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return redirect(url_for("views.index"))
+
+        grant = get_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        if grant is None:
+            session.clear()
+            return redirect(url_for("login"))
+
+        csrf_token = session.get("account_csrf")
+        if not csrf_token:
+            csrf_token = secrets.token_urlsafe(24)
+            session["account_csrf"] = csrf_token
+
+        email, expires_at = grant
+        error = None
+        message = None
+        if request.method == 'POST':
+            supplied_csrf = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
+                error = "请刷新页面后重试。"
+            else:
+                new_email = normalize_email(request.form.get("email", ""))
+                if not new_email:
+                    error = "请输入有效的邮箱地址。"
+                elif not update_access_grant_email(
+                    app.config['ACCESS_DATABASE_PATH'], grant_id, new_email
+                ):
+                    session.clear()
+                    return redirect(url_for("login"))
+                else:
+                    email = new_email
+                    message = "邮箱已更新。"
+
+        expiration = datetime.fromtimestamp(expires_at, timezone.utc).strftime(
+            "%Y-%m-%d"
+        )
+        return render_template(
+            'account.html',
+            account_email=email,
+            expiration=expiration,
+            csrf_token=csrf_token,
+            error=error,
+            message=message,
+        )
 
     @app.post('/logout')
     def logout():
@@ -116,7 +315,15 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     def inject_asset_config():
         return {
             "r2_cdn_url": app.config["R2_CDN_URL"],
-            "beta_auth_enabled": bool(app.config['BETA_PASSPHRASE']),
+            "beta_auth_enabled": auth_enabled,
+            "individual_account": session.get("access_grant_id") is not None,
+            "access_requests_enabled": bool(
+                app.config['ACCESS_DATABASE_PATH']
+                and app.config['RESEND_API_KEY']
+                and app.config['TURNSTILE_SITE_KEY']
+                and app.config['TURNSTILE_SECRET_KEY']
+                and app.config['TURNSTILE_HOSTNAMES']
+            ),
         }
 
     @app.route('/health')
@@ -129,11 +336,15 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             with NianpuDatabase(db_path) as db:
                 stats = db.get_stats()
             mapping_ok = os.path.exists(app.config['PAGE_IMAGES_MAPPING'])
+            access_ok = not app.config['ACCESS_DATABASE_PATH'] or access_database_is_healthy(
+                app.config['ACCESS_DATABASE_PATH']
+            )
             return jsonify({
-                "status": "healthy" if mapping_ok else "degraded",
+                "status": "healthy" if mapping_ok and access_ok else "degraded",
                 "mapping_ok": mapping_ok,
+                "access_store_ok": access_ok,
                 "stats": stats
-            })
+            }), 200 if access_ok else 500
         except Exception as e:
             app.logger.error(f"Health check failed: {e}")
             return jsonify({"status": "unhealthy", "error": "database error"}), 500

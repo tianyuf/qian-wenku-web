@@ -296,7 +296,7 @@ def index():
 
 @views_bp.route('/search/results')
 def search_results():
-    """HTMX partial for search results."""
+    """HTMX partial for search results; renders the full page for direct visits."""
     query = request.args.get('q', '').strip()
     person = request.args.get('person', '').strip()
     year_start = request.args.get('year_start', type=int)
@@ -306,6 +306,10 @@ def search_results():
     extra_query = request.args.get('q2', '').strip()
     limit = clamp_int(request.args.get('limit'), 20, 1, 200)
     offset = clamp_int(request.args.get('offset'), 0, 0, 1_000_000)
+
+    if not request.headers.get('HX-Request'):
+        # Direct visit (bookmark/refresh of an HTMX-pushed URL): render full page
+        return index()
 
     results, total, limit, offset = do_search(
         query, person, year_start, year_end, source_ids, content_type or None, limit, offset, extra_query or None)
@@ -369,12 +373,12 @@ def search_suggest():
         return ''
 
     html = '<div class="list-group list-group-flush" role="listbox">'
-    for s in suggestions:
+    for i, s in enumerate(suggestions):
         escaped = escape(s)
         json_val = json.dumps(s, ensure_ascii=False)
         html += (
-            f'<a href="#" class="list-group-item list-group-item-action py-1 small" '
-            f'role="option" '
+            f'<a href="#" id="search-suggestion-{i}" class="list-group-item list-group-item-action py-1 small" '
+            f'role="option" aria-selected="false" '
             f'onclick="document.querySelector(\'input[name=q]\').value={json_val};'
             f'document.getElementById(\'search-form\').dispatchEvent(new Event(\'submit\'));'
             f'this.closest(\'.list-group\').remove();return false;">{escaped}</a>'
@@ -1307,21 +1311,8 @@ def about():
 
 @views_bp.route('/mcp')
 def mcp_guide():
-    """MCP (Model Context Protocol) usage guide.
-
-    When beta auth is on and the user is logged in, the page also receives
-    their passphrase so the copy buttons can pre-fill commands with it.
-    """
-    from flask import current_app, session
-    token = ""
-    if current_app.config.get("BETA_PASSPHRASE") and session.get("beta_authenticated"):
-        token = current_app.config["BETA_PASSPHRASE"]
-    return render_template(
-        'mcp.html',
-        beta_auth_enabled=bool(current_app.config.get("BETA_PASSPHRASE")),
-        beta_authenticated=bool(session.get("beta_authenticated")),
-        mcp_token_ejs=token,
-    )
+    """MCP (Model Context Protocol) usage guide."""
+    return render_template('mcp.html')
 
 
 @views_bp.route('/mcp/install.md')
@@ -1356,11 +1347,11 @@ over HTTPS.
 
 ## What you need
 
-The **beta access passphrase** for this site. It doubles as the bearer
-token the server expects. If you don't have one, request it from
-mail@qianxuesen.org.
+Your **individual access code** for this site. It doubles as the bearer
+token the server expects. If you don't have one, request it at
+https://wenku.qianxuesen.org/request-access.
 
-Ask the user for that passphrase now if you don't already have it. Do
+Ask the user for that access code now if you don't already have it. Do
 NOT proceed with a placeholder.
 
 ## How to install
@@ -1384,13 +1375,13 @@ existing `mcp` entries. Merge in:
     "qian-wenku": {
       "type": "remote",
       "url": "https://wenku.qianxuesen.org/mcp/rpc",
-      "headers": { "Authorization": "Bearer USER_PASSPHRASE" }
+      "headers": { "Authorization": "Bearer USER_ACCESS_CODE" }
     }
   }
 }
 ```
 
-Replace `USER_PASSPHRASE` with the user's beta passphrase. Write the file
+Replace `USER_ACCESS_CODE` with the user's access code. Write the file
 back, preserving the user's `$schema` declaration and any comments.
 
 If `mcp.qian-wenku` already exists, stop and ask the user whether to
@@ -1406,7 +1397,7 @@ Tell the user to run:
 ```bash
 claude mcp add --transport http qian-wenku \\
   https://wenku.qianxuesen.org/mcp/rpc \\
-  --header "Authorization: Bearer USER_PASSPHRASE"
+  --header "Authorization: Bearer USER_ACCESS_CODE"
 ```
 
 Scope to current project by default; `--scope user` for all projects.
@@ -1423,7 +1414,7 @@ Inside the existing `mcpServers` object, add:
 "qian-wenku": {
   "type": "http",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
-  "headers": { "Authorization": "Bearer USER_PASSPHRASE" }
+  "headers": { "Authorization": "Bearer USER_ACCESS_CODE" }
 }
 ```
 
@@ -1435,18 +1426,18 @@ Any client that supports remote HTTP MCP servers with a static
 Authorization header works. The two things to wire up are always:
 
 - **URL**: `https://wenku.qianxuesen.org/mcp/rpc`
-- **Header**: `Authorization: Bearer USER_PASSPHRASE`
+- **Header**: `Authorization: Bearer USER_ACCESS_CODE`
 
 ## Verify it worked
 
 After the user reloads their client, ask them to type something like:
 "List the sources in qian-wenku" or "Search qian-wenku for 钱学森 in 1956".
 The tool call should return real data, not an error. If it fails, have them
-confirm the passphrase matches the website login and try again.
+confirm the access code works on the website login and try again.
 
 ## Privacy note
 
-The passphrase gives read access to the same corpus the website exposes.
+The access code gives read access to the same corpus the website exposes.
 Do not share it. Do not commit config files containing it to version
 control.
 """

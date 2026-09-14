@@ -8,15 +8,7 @@
 {% endblock %}
 
 {% block content %}
-<aside class="sidebar-left">
-    <div class="filter-group">
-        <a href="{{ url_for('views.index') }}" class="btn btn-outline-secondary btn-sm w-100">← 搜索</a>
-    </div>
-</aside>
-
-<div class="resize-handle resize-handle-left"></div>
-
-<section class="content-center" id="main" role="main">
+<section class="content-center content-narrow" id="main" role="main">
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">关于钱学森文库</h5>
@@ -73,7 +65,7 @@
         <div class="card-body">
             <h5 class="card-title">联系方式</h5>
             <p class="card-text text-muted mb-0">
-                如需访问或有任何问题，请联系 <a href="mailto:mail@qianxuesen.org">mail@qianxuesen.org</a>。
+                如需访问，请使用<a href="{{ url_for('request_access') }}">访问申请页</a>自动获取个人访问码。
             </p>
         </div>
     </div>

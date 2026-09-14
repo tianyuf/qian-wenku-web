@@ -9,8 +9,9 @@ User=qian-wenku-web
 Group=qian-wenku-web
 WorkingDirectory=/opt/qian-wenku-web
 EnvironmentFile=/opt/qian-wenku-web/.env
-# WENKU_MCP_TOKEN comes from the env file — required.
-# WENKU_BASE_URL can be overridden there too; defaults to https://wenku.qianxuesen.org.
+# WENKU_BETA_PASSPHRASE is the internal web API credential.
+# WENKU_MCP_TOKEN is an optional operator bearer token.
+# WENKU_BASE_URL can be overridden; it defaults to https://wenku.qianxuesen.org.
 ExecStart=/opt/qian-wenku-web/.venv/bin/python -m qian_wenku_mcp.server --http --host=127.0.0.1 --port=8100
 Restart=on-failure
 RestartSec=5
@@ -24,6 +25,7 @@ ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
 ReadOnlyPaths=/opt/qian-wenku-web
+ReadOnlyPaths=/var/lib/qian-wenku-access
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=true
 RestrictRealtime=true

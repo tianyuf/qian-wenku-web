@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block meta_description %}申请钱学森文库研究访问权限{% endblock %}
+{% block title %}申请访问 · 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+{% block header_logo %}<a href="{{ url_for('request_access') }}" class="logo">钱学森文库</a>{% endblock %}
+{% block header_nav %}<span class="beta-badge">受限访问</span>{% endblock %}
+
+{% block content %}
+<main class="login-view" id="main">
+    <section class="login-panel" aria-labelledby="request-title">
+        <span class="section-kicker">研究访问</span>
+        <h1 id="request-title">申请访问</h1>
+        {% if unavailable %}
+        <div class="login-error" role="alert">访问申请暂时不可用。</div>
+        {% elif submitted %}
+        <p class="login-description access-success">访问码已发送至您的邮箱，有效期 {{ ttl_days }} 天，同时可用于文库的 MCP 服务。</p>
+        <a class="btn btn-primary w-100" href="{{ url_for('login') }}">输入访问码</a>
+        {% else %}
+        <p class="login-description">本文库面向研究用途开放。输入您的邮箱，我们会向您发送个人访问码。</p>
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" class="login-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="access-honeypot" aria-hidden="true">
+                <label for="website">Website</label>
+                <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+            </div>
+            <div class="filter-group">
+                <label for="email">邮箱地址</label>
+                <input class="form-control" id="email" name="email" type="email" required autofocus autocomplete="email" value="{{ request.form.get('email', '') }}">
+            </div>
+            <label class="access-terms">
+                <input type="checkbox" name="accept_terms" value="yes" required>
+                <span>我了解访问仅限研究用途，不包括复制或再分发文库资料的权利。</span>
+            </label>
+            <div class="cf-turnstile access-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="request_access"></div>
+            <button type="submit" class="btn btn-primary">发送访问码</button>
+            <p class="login-access"><a href="{{ url_for('login') }}">已有访问码</a></p>
+        </form>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endblock %}

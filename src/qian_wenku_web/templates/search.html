@@ -19,8 +19,10 @@
             <label for="search-input">搜索关键词</label>
             <input type="search" id="search-input" class="form-control form-control-sm search-input" name="q"
                    value="{{ query or '' }}" placeholder="输入关键词..." autocomplete="off"
+                   role="combobox" aria-expanded="false" aria-controls="search-suggestions"
+                   aria-autocomplete="list"
                    hx-get="{{ url_for('views.search_suggest') }}"
-                   hx-trigger="keyup changed delay:300ms"
+                   hx-trigger="input changed delay:300ms"
                    hx-target="#search-suggestions">
             <div id="search-suggestions" role="listbox" aria-label="搜索建议"></div>
         </div>

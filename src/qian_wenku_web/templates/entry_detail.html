@@ -201,18 +201,18 @@
     {% endif %}
 
     {% if own_entities %}
-    <div style="padding: 0.6rem 1.5rem; border-top: 1px solid var(--border-light);">
-        <span class="text-muted small" style="margin-right: 0.4rem;">本文提及：</span>
+    <div class="entities-strip">
+        <span class="entities-label">本文提及：</span>
         {% for en in own_entities %}
         <a href="{{ url_for('views.browse_entity', entity_id=en.id) }}"
-           class="entity-type-badge {{ en.type }}" style="text-decoration:none; margin: 0.15rem 0.15rem 0.15rem 0; display: inline-block;"
+           class="entity-type-badge {{ en.type }}"
            title="{{ '人物' if en.type == 'person' else '机构' }}">{{ en.name }}</a>
         {% endfor %}
     </div>
     {% endif %}
 
-    <div class="d-flex justify-content-between align-items-center px-4 py-2" style="background:#fafafa; border-top:1px solid #dee2e6;">
-        <span class="text-muted" style="font-size:0.85rem;">
+    <div class="entry-pageinfo">
+        <span class="page-range">
             {% if entry.start_page != entry.end_page %}
                 第 {{ entry.start_page }}-{{ entry.end_page }} 页
             {% else %}
@@ -308,6 +308,8 @@ function toggleContinuousReading(nextUrl) {
 function loadNextEntry(url) {
     if (continuousObserver) continuousObserver.disconnect();
     var container = document.getElementById('continuous-container');
+    var toggle = document.getElementById('continuous-toggle');
+    if (toggle) toggle.textContent = '连续阅读下一条 ↓';
     var sentinel = document.createElement('div');
     sentinel.style.cssText = 'padding:1rem; text-align:center; color:var(--muted); font-size:0.85rem;';
     sentinel.textContent = '正在载入…';

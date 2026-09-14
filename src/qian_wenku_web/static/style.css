@@ -58,6 +58,7 @@ a.link-plain:hover {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
 }
 
 .app-header {
@@ -91,6 +92,21 @@ a.link-plain:hover {
 
 .app-header .nav::-webkit-scrollbar {
     display: none;
+}
+
+@media (max-width: 1100px) {
+    .app-header {
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .app-header::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 760px) {
+    .app-header .logo {
+        margin-right: 1rem;
+    }
 }
 
 .app-header .nav-link {
@@ -189,7 +205,7 @@ a.link-plain:hover {
 .section-kicker,
 .section-header {
     display: block;
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     color: var(--muted);
     margin-bottom: 0.35rem;
     font-weight: 700;
@@ -197,7 +213,7 @@ a.link-plain:hover {
 }
 
 .same-day-title {
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: var(--muted);
     margin-bottom: 0.5rem;
@@ -256,7 +272,7 @@ a.link-plain:hover {
 
 .choice-row small {
     color: var(--quiet);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
 }
 
 .filter-actions {
@@ -698,8 +714,11 @@ mark.highlight {
 @media (max-width: 760px) {
     .app-header {
         padding: 0 0.8rem;
-        overflow: hidden;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
     }
+    .app-header::-webkit-scrollbar { display: none; }
 
     .app-header .logo {
         margin-right: 1rem;
@@ -785,17 +804,30 @@ mark.highlight {
     vertical-align: baseline;
 }
 
+.content-type-badge::before {
+    content: '·';
+    margin-right: 2px;
+    font-weight: 700;
+    opacity: 0.65;
+}
+
 .content-type-badge.wenji {
     color: #6b4c1e;
 }
+
+.content-type-badge.wenji::before { content: '文'; }
 
 .content-type-badge.shuxin {
     color: #1a524a;
 }
 
+.content-type-badge.shuxin::before { content: '信'; }
+
 .content-type-badge.nianpu {
     color: #2d4a28;
 }
+
+.content-type-badge.nianpu::before { content: '谱'; }
 
 .entity-type-badge {
     display: inline;
@@ -805,14 +837,25 @@ mark.highlight {
     vertical-align: baseline;
 }
 
+.entity-type-badge::before {
+    content: '·';
+    margin-right: 2px;
+    font-weight: 700;
+    opacity: 0.65;
+}
+
 /* Entity badges use a distinct hue (indigo) from content-type badges (green/brown) */
 .entity-type-badge.person {
     color: #3b3f8f;
 }
 
+.entity-type-badge.person::before { content: '人'; }
+
 .entity-type-badge.organization {
     color: #6d2e6d;
 }
+
+.entity-type-badge.organization::before { content: '构'; }
 
 @media print {
     .app-header,
@@ -973,6 +1016,7 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     -webkit-box-orient: vertical;
     line-height: 1.6;
 }
+.otd-preview:visited { color: var(--text); }
 .otd-preview:hover { color: var(--accent); }
 /* Beta login */
 .beta-badge {
@@ -1039,6 +1083,84 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     color: var(--accent);
 }
 
+.access-honeypot {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.access-terms {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.access-terms input {
+    flex: 0 0 auto;
+    margin-top: 0.2rem;
+    accent-color: var(--accent);
+}
+
+.access-success {
+    margin-bottom: 1rem;
+}
+
+.access-turnstile {
+    margin-bottom: 1rem;
+}
+
+.account-details {
+    margin: 1.25rem 0;
+    padding: 0.8rem 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+.account-details div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.account-details dt,
+.account-details dd {
+    margin: 0;
+    font-size: 0.88rem;
+}
+
+.account-details dt {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.account-details dd {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.account-success {
+    margin-bottom: 1rem;
+    padding: 0.65rem 0.75rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+    font-size: 0.86rem;
+}
+
+.account-logout {
+    margin-top: 0.75rem;
+}
+
+.account-logout .btn {
+    width: 100%;
+}
+
 .logout-form {
     display: contents;
 }
@@ -1047,4 +1169,77 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     border: 0;
     background: transparent;
     font: inherit;
+}
+
+/* Entry card preview: sans, muted (moved from inline style) */
+.entry-preview {
+    font-family: "Noto Sans SC", "Source Han Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 0.92rem;
+    line-height: 1.7;
+    color: var(--muted);
+}
+
+/* Entry page-info bar on detail page (moved from inline styles) */
+.entry-pageinfo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.55rem 1.5rem;
+    background: var(--surface-muted);
+    border-top: 1px solid var(--border);
+}
+.entry-pageinfo .page-range {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+/* Entities-mentioned strip (moved from inline styles) */
+.entities-strip {
+    padding: 0.6rem 1.5rem;
+    border-top: 1px solid var(--border-light);
+}
+.entities-strip .entities-label {
+    margin-right: 0.4rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+.entities-strip .entity-type-badge {
+    text-decoration: none;
+    margin: 0.15rem 0.15rem 0.15rem 0;
+    display: inline-block;
+}
+
+/* Narrower single-column content for reading pages */
+.content-narrow {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+.content-narrow .card {
+    margin-bottom: 1rem;
+}
+
+/* Suggestion active state (keyboard navigation) */
+#search-suggestions .list-group-item.active,
+#search-suggestions .list-group-item[aria-selected="true"] {
+    background: var(--accent-soft);
+    color: var(--text);
+    border-color: var(--border);
+}
+
+/* Out-of-range feedback on PDF page input */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+.pdf-toolbar .form-control.shake {
+    animation: shake 0.25s ease-in-out 2;
+}
+
+/* Mobile PDF panel: scroll into view when opened */
+@media (max-width: 1100px) {
+    .sidebar-right:focus-within {
+        outline: none;
+    }
 }

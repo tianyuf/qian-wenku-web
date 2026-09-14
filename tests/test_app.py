@@ -12,6 +12,7 @@ def test_startup_and_health(client):
         "sources": 4,
         "year_range": [1911, 1912],
     }
+    assert response.get_json()["access_store_ok"] is True
     assert client.get("/").status_code == 200
 
 
@@ -88,9 +89,9 @@ def test_beta_login_flow(artifact_dir, monkeypatch):
         "/login", data={"passphrase": "wrong", "next": "/browse"}
     )
     assert wrong.status_code == 200
-    assert "Incorrect passphrase" in wrong.get_data(as_text=True)
-    assert 'lang="en"' in wrong.get_data(as_text=True)
-    assert "mailto:mail@qianxuesen.org" in wrong.get_data(as_text=True)
+    assert "访问码不正确或已过期" in wrong.get_data(as_text=True)
+    assert 'lang="zh-CN"' in wrong.get_data(as_text=True)
+    assert "Request access" not in wrong.get_data(as_text=True)
 
     login = beta_client.post(
         "/login",
@@ -99,6 +100,7 @@ def test_beta_login_flow(artifact_dir, monkeypatch):
     assert login.status_code == 302
     assert login.headers["Location"].endswith("/browse")
     assert beta_client.get("/browse").status_code == 200
+    assert "/account" not in beta_client.get("/browse").get_data(as_text=True)
 
     assert beta_client.post("/logout").status_code == 302
     assert beta_client.get("/browse").status_code == 302
@@ -119,3 +121,118 @@ def test_beta_login_rejects_external_redirects(artifact_dir, monkeypatch):
         data={"passphrase": "fixture-passphrase", "next": "https://example.com"},
     )
     assert response.headers["Location"].endswith("/")
+
+
+def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    sent_codes = []
+
+    def fake_send(*args):
+        sent_codes.append(args[3])
+
+    monkeypatch.setattr("qian_wenku_web.app.send_access_code", fake_send)
+    monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args: True)
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    access_client = app.test_client()
+
+    assert access_client.get("/browse").status_code == 302
+    request_page = access_client.get("/request-access")
+    assert request_page.status_code == 200
+    assert "发送访问码" in request_page.get_data(as_text=True)
+    with access_client.session_transaction() as session:
+        csrf_token = session["access_request_csrf"]
+
+    malformed_csrf = access_client.post(
+        "/request-access",
+        data={
+            "csrf_token": "非 ASCII",
+            "email": "researcher@example.com",
+            "accept_terms": "yes",
+        },
+    )
+    assert malformed_csrf.status_code == 200
+    assert "请刷新页面后重试" in malformed_csrf.get_data(as_text=True)
+
+    response = access_client.post(
+        "/request-access",
+        data={
+            "csrf_token": csrf_token,
+            "email": "Researcher@Example.com",
+            "accept_terms": "yes",
+        },
+    )
+    assert response.status_code == 200
+    assert "访问码已发送至您的邮箱" in response.get_data(as_text=True)
+    assert len(sent_codes) == 1
+    assert sent_codes[0].startswith("qx_")
+    assert sent_codes[0].encode() not in access_db.read_bytes()
+
+    duplicate = access_client.post(
+        "/request-access",
+        data={
+            "csrf_token": csrf_token,
+            "email": "Researcher@example.com",
+            "accept_terms": "yes",
+        },
+    )
+    assert duplicate.status_code == 200
+    assert len(sent_codes) == 1
+
+    login = access_client.post(
+        "/login", data={"passphrase": sent_codes[0], "next": "/browse"}
+    )
+    assert login.status_code == 302
+    browse = access_client.get("/browse")
+    assert browse.status_code == 200
+    assert 'href="/account"' in browse.get_data(as_text=True)
+
+    account_page = access_client.get("/account")
+    assert account_page.status_code == 200
+    assert "Researcher@example.com" in account_page.get_data(as_text=True)
+    assert "访问有效期至" in account_page.get_data(as_text=True)
+    with access_client.session_transaction() as account_session:
+        account_csrf = account_session["account_csrf"]
+
+    invalid_email = access_client.post(
+        "/account",
+        data={"csrf_token": account_csrf, "email": "not-an-email"},
+    )
+    assert "请输入有效的邮箱地址" in invalid_email.get_data(as_text=True)
+
+    invalid_csrf = access_client.post(
+        "/account",
+        data={"csrf_token": "wrong", "email": "other@example.com"},
+    )
+    assert "请刷新页面后重试" in invalid_csrf.get_data(as_text=True)
+
+    updated = access_client.post(
+        "/account",
+        data={"csrf_token": account_csrf, "email": "Updated@Example.COM"},
+    )
+    assert updated.status_code == 200
+    assert "邮箱已更新" in updated.get_data(as_text=True)
+    assert "Updated@example.com" in updated.get_data(as_text=True)
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT email FROM access_grants WHERE id = 1"
+        ).fetchone()[0] == "Updated@example.com"
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute("UPDATE access_grants SET revoked_at = 1")
+    revoked = access_client.get("/browse")
+    assert revoked.status_code == 302
+    assert "/login" in revoked.headers["Location"]

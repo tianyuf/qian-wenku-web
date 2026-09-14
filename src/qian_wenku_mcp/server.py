@@ -2,23 +2,25 @@
 
 Two modes:
 
-* **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with a
-  `WENKU_BETA_PASSPHRASE` env var; the server does the beta login and
-  returns results over stdio.
+* **stdio** (`qian-wenku-mcp`) — each researcher runs it locally with their
+  access code in `WENKU_BETA_PASSPHRASE`; the server logs into the web API
+  and returns results over stdio.
 
 * **hosted HTTP** (`python -m qian_wenku_mcp.server`) — runs on the
-  deployment host as a sibling service to the web app, exposes the MCP
-  endpoint at /mcp with bearer-token auth, and is meant to be fronted by
-  nginx.
+  deployment host as a sibling service to the web app, accepts active
+  access codes as bearer tokens, and is meant to be fronted by nginx.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Optional
 
 import httpx
 from fastmcp import FastMCP
+
+from qian_wenku_web.access import verify_bearer_token
 
 DEFAULT_BASE_URL = "https://wenku.qianxuesen.org"
 
@@ -56,14 +58,18 @@ class WenkuClient:
             "/login",
             data={"passphrase": self.passphrase, "next": "/"},
         )
-        # Login redirects on success; wrong passphrase re-renders the login page with an error.
-        if resp.status_code == 200 and "Incorrect passphrase" in resp.text:
-            raise PermissionError("Beta passphrase rejected by server")
+        # Success redirects to the requested page; rejection stays on /login.
+        if resp.url.path == "/login":
+            raise PermissionError("Access code rejected by server")
         self._authenticated = True
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._login_if_needed()
         resp = self._client.get(path, params=params)
+        if resp.status_code == 401 and self.passphrase:
+            self._authenticated = False
+            self._login_if_needed()
+            resp = self._client.get(path, params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -111,10 +117,7 @@ mcp = FastMCP(
 )
 
 _base_url = os.environ.get("WENKU_BASE_URL", DEFAULT_BASE_URL)
-_passphrase = (
-    os.environ.get("WENKU_BETA_PASSPHRASE")
-    or os.environ.get("WENKU_MCP_TOKEN", "")
-)
+_passphrase = os.environ.get("WENKU_BETA_PASSPHRASE", "")
 _client = WenkuClient(_base_url, _passphrase)
 
 
@@ -278,27 +281,39 @@ def main() -> None:
 def serve_http(host: str = "127.0.0.1", port: int = 8100) -> None:
     """Run the MCP server over HTTP behind the deployment's nginx.
 
-    Expects the bearer-token value from ``WENKU_MCP_TOKEN`` (a shared
-    secret — typically the same value as the web app's BETA_PASSPHRASE).
-    Requests are rejected client-side by middleware before reaching the
-    MCP stack, so any invalid token gets a plain 401.
+    Accepts active individual access codes plus an optional operator token.
+    Requests are rejected by middleware before reaching the MCP stack, so
+    any invalid token gets a plain 401.
     """
-    import hmac as _hmac
-
     from starlette.applications import Starlette
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
     import uvicorn
 
-    token = os.environ.get("WENKU_MCP_TOKEN", "")
-    if not token:
-        raise RuntimeError("WENKU_MCP_TOKEN is required for the hosted MCP server")
+    operator_token = os.environ.get("WENKU_MCP_TOKEN", "")
+    access_db_path = os.environ.get("ACCESS_DATABASE_PATH", "")
+    access_code_secret = os.environ.get("ACCESS_CODE_SECRET", "")
+    if access_db_path and not access_code_secret:
+        raise RuntimeError("ACCESS_CODE_SECRET is required for individual access codes")
+    if not operator_token and not access_db_path:
+        raise RuntimeError("Hosted MCP authentication is not configured")
+    if not _passphrase:
+        raise RuntimeError(
+            "WENKU_BETA_PASSPHRASE is required for hosted MCP web API access"
+        )
+    _client._login_if_needed()
 
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):  # type: ignore[override]
             auth = request.headers.get("authorization", "")
-            scheme, _, value = auth.partition(" ")
-            if scheme.lower() != "bearer" or not _hmac.compare_digest(value, token):
+            valid = await asyncio.to_thread(
+                verify_bearer_token,
+                auth,
+                operator_token,
+                access_db_path,
+                access_code_secret,
+            )
+            if not valid:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
             return await call_next(request)
 

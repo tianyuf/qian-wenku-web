@@ -1,24 +1,45 @@
 {% from 'entry_card.html' import entry_card %}
 
+{# Build a search-results URL keeping every active filter. Set `without` to the
+   name of the filter(s) to drop (e.g. 'q', 'q2', 'year', 'content_type',
+   'source:N', or 'all'). Reads query/year_start/year_end/content_type/
+   selected_sources from the template context. #}
+{% macro search_url(offset=0, without=[]) %}
+{%- set w = without if without is sequence and without is not string else [without] -%}
+{%- if 'all' in w -%}
+{%- set w = ['q', 'q2', 'year', 'content_type'] + w -%}
+{%- for sid in selected_sources -%}{%- set _ = w.append('source:' ~ sid) -%}{%- endfor -%}
+{%- endif -%}
+{%- set params = [] -%}
+{%- if query and 'q' not in w -%}{%- set _ = params.append(('q', query)) -%}{%- endif -%}
+{%- if extra_query and 'q2' not in w -%}{%- set _ = params.append(('q2', extra_query)) -%}{%- endif -%}
+{%- if year_start and 'year' not in w -%}{%- set _ = params.append(('year_start', year_start)) -%}{%- endif -%}
+{%- if year_end and 'year' not in w -%}{%- set _ = params.append(('year_end', year_end)) -%}{%- endif -%}
+{%- if content_type and 'content_type' not in w -%}{%- set _ = params.append(('content_type', content_type)) -%}{%- endif -%}
+{%- for sid in selected_sources -%}{%- if 'source:' ~ sid not in w -%}{%- set _ = params.append(('source_id', sid)) -%}{%- endif -%}{%- endfor -%}
+{%- set _ = params.append(('limit', limit)) -%}
+{%- set _ = params.append(('offset', offset)) -%}
+{{- url_for('views.search_results') }}?{{ params | urlencode }}{% endmacro %}
+
 {% set has_filters = query or year_start or year_end or content_type or selected_sources or extra_query %}
 {% if has_filters %}
 <div class="filter-chips" style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; margin-bottom:0.75rem;">
     {% if query %}
-    <span class="filter-chip">{{ query }} <a href="{{ url_for('views.search_results', q2=extra_query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除关键词">×</a></span>
+    <span class="filter-chip">{{ query }} <a href="{{ search_url(without='q') }}" class="chip-remove" aria-label="移除关键词" hx-get="{{ search_url(without='q') }}" hx-target="#results-container" hx-swap="innerHTML" hx-push-url="true">×</a></span>
     {% endif %}
     {% if extra_query %}
-    <span class="filter-chip">{{ extra_query }} <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除缩小范围">×</a></span>
+    <span class="filter-chip">{{ extra_query }} <a href="{{ search_url(without='q2') }}" class="chip-remove" aria-label="移除缩小范围" hx-get="{{ search_url(without='q2') }}" hx-target="#results-container" hx-swap="innerHTML" hx-push-url="true">×</a></span>
     {% endif %}
     {% if year_start or year_end %}
-    <span class="filter-chip">{{ year_start or '' }}–{{ year_end or '' }} <a href="{{ url_for('views.search_results', q=query, content_type=content_type, source_id=selected_sources) }}" class="chip-remove" aria-label="移除年份范围">×</a></span>
+    <span class="filter-chip">{{ year_start or '' }}–{{ year_end or '' }} <a href="{{ search_url(without='year') }}" class="chip-remove" aria-label="移除年份范围" hx-get="{{ search_url(without='year') }}" hx-target="#results-container" hx-swap="innerHTML" hx-push-url="true">×</a></span>
     {% endif %}
     {% if content_type %}
-    <span class="filter-chip">{{ {'nianpu': '年谱', 'wenji': '文集', 'shuxin': '书信'}[content_type] or content_type }} <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, source_id=selected_sources) }}" class="chip-remove" aria-label="移除类型筛选">×</a></span>
+    <span class="filter-chip">{{ {'nianpu': '年谱', 'wenji': '文集', 'shuxin': '书信'}[content_type] or content_type }} <a href="{{ search_url(without='content_type') }}" class="chip-remove" aria-label="移除类型筛选" hx-get="{{ search_url(without='content_type') }}" hx-target="#results-container" hx-swap="innerHTML" hx-push-url="true">×</a></span>
     {% endif %}
     {% for sid in selected_sources %}
+    {% set remaining_sources = selected_sources[:loop.index0] + selected_sources[loop.index0+1:] %}
     <span class="filter-chip">{{ source_titles.get(sid, '来源#' ~ sid) }}
-        {% set remaining_sources = selected_sources[:loop.index0] + selected_sources[loop.index0+1:] if selected_sources|length > 1 else [] %}
-        <a href="{{ url_for('views.search_results', q=query, year_start=year_start, year_end=year_end, content_type=content_type, source_id=remaining_sources) }}" class="chip-remove" aria-label="移除来源">×</a>
+        <a href="{{ search_url(without='source:' ~ sid) }}" class="chip-remove" aria-label="移除来源" hx-get="{{ search_url(without='source:' ~ sid) }}" hx-target="#results-container" hx-swap="innerHTML" hx-push-url="true">×</a>
     </span>
     {% endfor %}
 </div>
@@ -62,19 +83,23 @@ function narrowSearch(term) {
     {% endfor %}
 
     {% if total > limit %}
-    <nav class="result-nav">
+    {% set current_page = (offset // limit) + 1 %}
+    {% set total_pages = (total // limit) + (1 if total % limit else 0) %}
+    <nav class="result-nav" aria-label="分页">
         {% if offset > 0 %}
-        <a href="?q={{ query|urlencode }}&year_start={{ year_start or '' }}&year_end={{ year_end or '' }}&content_type={{ content_type or '' }}{% for sid in selected_sources %}&source_id={{ sid }}{% endfor %}&offset={{ offset - limit }}&limit={{ limit }}">← 上一页</a>
+        <a href="{{ search_url(offset=offset - limit) }}"
+           hx-get="{{ search_url(offset=offset - limit) }}" hx-target="#results-container"
+           hx-swap="innerHTML" hx-push-url="true">← 上一页</a>
         {% else %}
         <span class="text-muted">← 上一页</span>
         {% endif %}
 
-        {% set current_page = (offset // limit) + 1 %}
-        {% set total_pages = (total // limit) + (1 if total % limit else 0) %}
         <span class="result-nav-page">{{ current_page }} / {{ total_pages }}</span>
 
         {% if offset + limit < total %}
-        <a href="?q={{ query|urlencode }}&year_start={{ year_start or '' }}&year_end={{ year_end or '' }}&content_type={{ content_type or '' }}{% for sid in selected_sources %}&source_id={{ sid }}{% endfor %}&offset={{ offset + limit }}&limit={{ limit }}">下一页 →</a>
+        <a href="{{ search_url(offset=offset + limit) }}"
+           hx-get="{{ search_url(offset=offset + limit) }}" hx-target="#results-container"
+           hx-swap="innerHTML" hx-push-url="true">下一页 →</a>
         {% else %}
         <span class="text-muted">下一页 →</span>
         {% endif %}
@@ -84,10 +109,21 @@ function narrowSearch(term) {
 <div class="text-center py-5 text-muted">
     <p class="empty-title">未找到结果</p>
     <p class="small">没有匹配「{{ query }}」的条目。请尝试其他关键词或调整筛选条件。</p>
+    <p class="small">
+        建议：
+        <a href="{{ search_url(without=['q', 'q2', 'year', 'content_type', 'all']) }}">清除全部筛选</a>
+        {% if selected_sources %} · <a href="{{ search_url(without=['all']) }}">查看全部来源</a>{% endif %}
+        {% if year_start or year_end %} · <a href="{{ search_url(without='year') }}">移除年份限制</a>{% endif %}
+    </p>
 </div>
 {% else %}
 <div class="text-center py-5 text-muted">
     <p class="empty-title">请输入搜索词开始探索文库内容</p>
     <p class="small">支持关键词搜索、年份范围限定、内容类型筛选</p>
+    <p class="small">
+        示例：<a href="{{ search_url(offset=0) }}&q=卫星">卫星</a> ·
+        <a href="{{ search_url(offset=0) }}&q=导弹&content_type=shuxin">书信中的导弹</a> ·
+        <a href="{{ search_url(offset=0) }}&q=系统">系统</a>
+    </p>
 </div>
 {% endif %}

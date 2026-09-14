@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% from 'entry_card.html' import entry_card %}
-{% from 'pdf_sidebar.html' import pdf_sidebar %}
 {% from 'breadcrumbs.html' import breadcrumbs %}
 
 {% block title %}{{ recipient.name }} - 收信人 - 钱学森文库{% endblock %}
@@ -45,9 +44,7 @@
     </div>
 
     {% for letter in letters %}
-    {{ entry_card(letter, source_id=letter.source_id, pdf_start_page=letter.pdf_start_page,
-                  total_pages=letter.total_pages, source_title_for_pdf=letter.source_title|tojson,
-                  pdf_available=letter.pdf_available) }}
+    {{ entry_card(letter) }}
     {% endfor %}
 
     {% if not letters %}
@@ -56,8 +53,4 @@
     </div>
     {% endif %}
 </section>
-
-<div class="resize-handle resize-handle-right"></div>
-
-{{ pdf_sidebar() }}
 {% endblock %}

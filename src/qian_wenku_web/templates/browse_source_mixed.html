@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% from 'entry_card.html' import entry_card %}
-{% from 'pdf_sidebar.html' import pdf_sidebar %}
 {% from 'breadcrumbs.html' import breadcrumbs %}
 
 {% block title %}{{ source.title }} - 钱学森文库{% endblock %}
@@ -34,13 +33,8 @@
     <h6 class="section-kicker">{{ source.title }} — 目录</h6>
     <div class="source-grid" style="grid-template-columns: 1fr;">
         {% for e in entries %}
-        {{ entry_card(e, source_id=source.id, pdf_start_page=e.pdf_start_page,
-                      total_pages=source.total_pages, source_title_for_pdf=source.title|tojson) }}
+        {{ entry_card(e) }}
         {% endfor %}
     </div>
 </section>
-
-<div class="resize-handle resize-handle-right"></div>
-
-{{ pdf_sidebar() }}
 {% endblock %}

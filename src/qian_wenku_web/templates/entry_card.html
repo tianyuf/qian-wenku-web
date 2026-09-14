@@ -50,7 +50,7 @@
         </div>
     </div>
     {% if e.preview %}
-    <div class="entry-content" style="font-family:'Noto Sans SC','Source Han Sans SC',-apple-system,sans-serif; font-size:0.92rem; line-height:1.7; color:var(--muted);">
+    <div class="entry-content entry-preview">
         {% if e.content %}{{ e.content|safe }}{% else %}{{ e.preview }}{% endif %}
     </div>
     {% endif %}

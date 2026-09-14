@@ -135,6 +135,7 @@ function navigateToDate(val) {
 document.addEventListener('keydown', function(e) {
     if (e.target.tagName === 'INPUT') return;
     if (e.metaKey || e.ctrlKey) return;
+    if (e.target.classList && e.target.classList.contains('resize-handle')) return;
     {% if prev_date %}
     if (e.key === 'ArrowLeft') { e.preventDefault(); window.location.href = '{{ url_for('views.browse_date', date_iso=prev_date) }}'; }
     {% endif %}

@@ -8,15 +8,7 @@
 {% endblock %}
 
 {% block content %}
-<aside class="sidebar-left">
-    <div class="filter-group">
-        <a href="{{ url_for('views.index') }}" class="btn btn-outline-secondary btn-sm w-100">← 搜索</a>
-    </div>
-</aside>
-
-<div class="resize-handle resize-handle-left"></div>
-
-<section class="content-center" id="main" role="main">
+<section class="content-center content-narrow" id="main" role="main">
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">什么是 MCP？</h5>
@@ -58,7 +50,7 @@
                 </button>
             </div>
             <p class="text-muted small mb-0">
-                AI 会询问您的<strong>访问口令</strong>（即本网站登录口令，向编者索取）。
+                AI 会询问您的<strong>访问码</strong>（即本网站登录码，可在申请页自动获取）。
             </p>
         </div>
     </div>
@@ -87,22 +79,18 @@
   "type": "remote",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
   "headers": {
-    "Authorization": "Bearer YOUR_TOKEN"
+    "Authorization": "Bearer YOUR_ACCESS_CODE"
   }
 }</code></pre>
-                    {% if beta_auth_enabled and beta_authenticated %}
-                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制配置（含我的口令）</button>
-                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-opencode">复制配置</button>
                     <p class="text-muted small mt-3 mb-0">然后重启 OpenCode。</p>
                 </div>
                 <div class="tab-pane fade" id="pane-claudecode" role="tabpanel">
                     <p class="text-muted small mb-2">在项目目录里运行：</p>
                     <pre class="bg-light p-3 rounded mb-2"><code id="cmd-claudecode">claude mcp add --transport http qian-wenku \
   https://wenku.qianxuesen.org/mcp/rpc \
-  --header "Authorization: Bearer YOUR_TOKEN"</code></pre>
-                    {% if beta_auth_enabled and beta_authenticated %}
-                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudecode">复制命令（含我的口令）</button>
-                    {% endif %}
+  --header "Authorization: Bearer YOUR_ACCESS_CODE"</code></pre>
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudecode">复制命令</button>
                     <p class="text-muted small mt-3 mb-0">默认只对当前项目生效；如需全局，加 <code>--scope user</code>。</p>
                 </div>
                 <div class="tab-pane fade" id="pane-claudedesktop" role="tabpanel">
@@ -111,18 +99,13 @@
   "type": "http",
   "url": "https://wenku.qianxuesen.org/mcp/rpc",
   "headers": {
-    "Authorization": "Bearer YOUR_TOKEN"
+    "Authorization": "Bearer YOUR_ACCESS_CODE"
   }
 }</code></pre>
-                    {% if beta_auth_enabled and beta_authenticated %}
-                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置（含我的口令）</button>
-                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-primary copy-cmd" data-target="cmd-claudedesktop">复制配置</button>
                     <p class="text-muted small mt-3 mb-0">保存并完全退出（重启）Claude Desktop。</p>
                 </div>
             </div>
-            {% if beta_auth_enabled and beta_authenticated %}
-            <div id="mcp-user-token" style="display:none" data-token="{{ mcp_token_ejs|default('') }}"></div>
-            {% endif %}
         </div>
     </div>
 
@@ -131,8 +114,8 @@
             <h5 class="card-title">服务信息</h5>
             <ul class="text-muted mb-0">
                 <li><strong>MCP endpoint URL</strong>: <code>https://wenku.qianxuesen.org/mcp/rpc</code></li>
-                <li><strong>请求头</strong>: <code>Authorization: Bearer 您的访问口令</code></li>
-                <li>访问口令即本网站登录口令，由编者分发；不要分享给他人。</li>
+                <li><strong>请求头</strong>: <code>Authorization: Bearer 您的访问码</code></li>
+                <li>访问码即本网站登录码，可在<a href="{{ url_for('request_access') }}">申请页</a>自动获取；不要分享给他人。</li>
             </ul>
         </div>
     </div>
@@ -144,7 +127,7 @@
                 适合：让 AI 帮您跨年份、跨来源做主题性检索与综述，快速定位某段历史的全部相关条目。
             </p>
             <p class="card-text text-muted mb-0">
-                请注意：MCP 与网页端共用同一个访问口令，不会绕过现有访问控制。
+                请注意：MCP 与网页端共用同一个个人访问码，不会绕过现有访问控制。
                 AI 助手的输出可能包含错误或对原文的转述偏差，引用前请回到条目页核对扫描页原文。
             </p>
         </div>
@@ -156,7 +139,7 @@
             <p class="card-text text-muted mb-0">
                 MCP 服务的代码托管在
                 <a href="https://github.com/tianyuf/qian-wenku-web">tianyuf/qian-wenku-web</a>（MIT 许可证，代码部分）。
-                有疑问请联系 <a href="mailto:mail@qianxuesen.org">mail@qianxuesen.org</a>。
+                访问码可在<a href="{{ url_for('request_access') }}">申请页</a>自动获取。
             </p>
         </div>
     </div>
@@ -179,18 +162,6 @@
         });
     }
 
-    var tokenEl = document.getElementById('mcp-user-token');
-    var token = tokenEl ? tokenEl.getAttribute('data-token') : '';
-    if (token) {
-        document.querySelectorAll('#harnessPanes code').forEach(function(el) {
-            el.innerHTML = el.innerHTML.replace(/YOUR_TOKEN/g, escapeHtml(token));
-        });
-    }
-    function escapeHtml(s) {
-        return s.replace(/[&<>"']/g, function(c) {
-            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-        });
-    }
     document.querySelectorAll('.copy-cmd').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var targetId = btn.getAttribute('data-target');

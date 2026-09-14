@@ -1,4 +1,3 @@
-{% from 'pdf_sidebar.html' import pdf_sidebar %}
 {% from 'breadcrumbs.html' import breadcrumbs %}
 {% extends "base.html" %}
 
@@ -43,8 +42,4 @@
         {% endfor %}
     </div>
 </section>
-
-<div class="resize-handle resize-handle-right"></div>
-
-{{ pdf_sidebar() }}
 {% endblock %}

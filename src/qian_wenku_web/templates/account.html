@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block meta_description %}管理您的钱学森文库访问{% endblock %}
+{% block title %}账户管理 · 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+
+{% block content %}
+<main class="login-view" id="main">
+    <section class="login-panel account-panel" aria-labelledby="account-title">
+        <span class="section-kicker">文库访问</span>
+        <h1 id="account-title">账户管理</h1>
+
+        <dl class="account-details">
+            <div>
+                <dt>访问有效期至</dt>
+                <dd>{{ expiration }}</dd>
+            </div>
+        </dl>
+
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        {% if message %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
+
+        <form method="post" class="login-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="filter-group">
+                <label for="email">邮箱地址</label>
+                <input class="form-control" id="email" name="email" type="email" required autocomplete="email" value="{{ account_email }}">
+            </div>
+            <button type="submit" class="btn btn-primary">更新邮箱</button>
+        </form>
+
+        <form method="post" action="{{ url_for('logout') }}" class="account-logout">
+            <button type="submit" class="btn btn-outline-secondary">退出登录</button>
+        </form>
+    </section>
+</main>
+{% endblock %}

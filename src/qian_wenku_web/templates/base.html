@@ -33,7 +33,9 @@
                 <a class="nav-link {% if request.path.startswith('/date') or request.path == '/timeline' %}active{% endif %}" href="{{ url_for('views.browse_timeline') }}">时间线</a>
                 <a class="nav-link {% if request.path == '/about' %}active{% endif %}" href="{{ url_for('views.about') }}">关于</a>
                 <a class="nav-link {% if request.path == '/mcp' %}active{% endif %}" href="{{ url_for('views.mcp_guide') }}">MCP</a>
-                {% if beta_auth_enabled %}
+                {% if individual_account %}
+                <a class="nav-link {% if request.path == '/account' %}active{% endif %}" href="{{ url_for('account') }}">账户</a>
+                {% elif beta_auth_enabled %}
                 <form method="post" action="{{ url_for('logout') }}" class="logout-form">
                     <button type="submit" class="nav-link logout-button">退出</button>
                 </form>
@@ -81,7 +83,14 @@
                 if (card) card.classList.add('is-selected');
             }
             ensureMapping(updatePDFViewer);
+            // On stacked layouts the PDF panel sits below the content — bring it into view.
+            if (window.matchMedia('(max-width: 1100px)').matches) {
+                var panel = document.getElementById('pdf-panel');
+                if (panel) setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+            }
         }
+
+        var pagePreload = {};
 
         function updatePDFViewer() {
             var s = window.pdfState;
@@ -91,30 +100,55 @@
             var pageTotal = document.getElementById('pdf-page-total');
             var sourceTitle = document.getElementById('pdf-source-title');
             if (viewer) {
-                viewer.innerHTML = '<div class="pdf-loading">正在载入第 ' + s.currentPage + ' 页</div>';
                 var url = getPageUrl(s.sourceId, s.currentPage);
-                if (url) {
-                    var img = new Image();
-                    img.alt = '第 ' + s.currentPage + ' 页扫描影像';
-                    img.onload = function() {
-                        viewer.innerHTML = '';
-                        viewer.appendChild(img);
-                        img.style.opacity = '1';
-                    };
-                    img.onerror = function() {
-                        viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
-                    };
-                    img.src = url;
-                    img.style.opacity = '0';
-                    img.style.transition = 'opacity 0.2s';
+                if (pagePreload[s.sourceId + ':' + s.currentPage]) {
+                    viewer.innerHTML = '';
+                    var ready = pagePreload[s.sourceId + ':' + s.currentPage];
+                    viewer.appendChild(ready);
+                    ready.style.opacity = '1';
+                    delete pagePreload[s.sourceId + ':' + s.currentPage];
                 } else {
-                    viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+                    viewer.innerHTML = '<div class="pdf-loading">正在载入第 ' + s.currentPage + ' 页</div>';
+                    if (url) {
+                        var img = new Image();
+                        img.alt = '第 ' + s.currentPage + ' 页扫描影像';
+                        img.onload = function() {
+                            if (window.pdfState.currentPage === s.currentPage && window.pdfState.sourceId === s.sourceId) {
+                                viewer.innerHTML = '';
+                                viewer.appendChild(img);
+                                img.style.opacity = '1';
+                            }
+                        };
+                        img.onerror = function() {
+                            viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+                        };
+                        img.src = url;
+                        img.style.opacity = '0';
+                        img.style.transition = 'opacity 0.2s';
+                    } else {
+                        viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+                    }
                 }
             }
-            if (pageInput) pageInput.value = s.currentPage;
+            if (pageInput) { pageInput.value = s.currentPage; pageInput.classList.remove('shake'); }
             if (pageTotal) pageTotal.textContent = s.totalPages || '—';
             if (sourceTitle) sourceTitle.textContent = s.title || 'PDF 原文';
             updatePDFButtons();
+            preloadAdjacentPages();
+        }
+
+        // Pre-fetch neighbouring pages so page flips feel instant.
+        function preloadAdjacentPages() {
+            var s = window.pdfState;
+            if (!s.sourceId || !s.totalPages) return;
+            [s.currentPage - 1, s.currentPage + 1].forEach(function(p) {
+                if (p < 1 || p > s.totalPages || pagePreload[s.sourceId + ':' + p]) return;
+                var url = getPageUrl(s.sourceId, p);
+                if (!url) return;
+                var img = new Image();
+                img.onload = function() { pagePreload[s.sourceId + ':' + p] = img; };
+                img.src = url;
+            });
         }
 
         function updatePDFButtons() {
@@ -135,7 +169,18 @@
 
         function goToPage(p) {
             p = parseInt(p);
-            if (p >= 1 && p <= window.pdfState.totalPages) { window.pdfState.currentPage = p; ensureMapping(updatePDFViewer); }
+            var pageInput = document.getElementById('pdf-page-input');
+            if (isNaN(p) || p < 1 || p > window.pdfState.totalPages) {
+                if (pageInput) {
+                    pageInput.classList.remove('shake');
+                    void pageInput.offsetWidth; // restart animation
+                    pageInput.classList.add('shake');
+                    pageInput.value = window.pdfState.currentPage;
+                }
+                return;
+            }
+            window.pdfState.currentPage = p;
+            ensureMapping(updatePDFViewer);
         }
 
         function copyCitation(text, btn) {
@@ -160,11 +205,79 @@
         document.addEventListener('click', function(e) {
             var sug = document.getElementById('search-suggestions');
             var box = document.querySelector('.search-panel');
-            if (sug && box && !box.contains(e.target)) sug.innerHTML = '';
+            if (sug && box && !box.contains(e.target)) { closeSuggestions(); }
         });
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') { var sug = document.getElementById('search-suggestions'); if (sug) sug.innerHTML = ''; }
+            if (e.key === 'Escape') { closeSuggestions(); }
         });
+        function closeSuggestions() {
+            var sug = document.getElementById('search-suggestions');
+            if (sug) sug.innerHTML = '';
+            var input = document.getElementById('search-input');
+            if (input) input.setAttribute('aria-expanded', 'false');
+        }
+
+        // PDF panel: arrow-key paging when focus is inside the panel
+        document.addEventListener('keydown', function(e) {
+            var panel = e.target.closest && e.target.closest('.sidebar-right');
+            if (!panel) return;
+            if (e.target.tagName === 'INPUT') return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); prevPage(); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); nextPage(); }
+        });
+
+        // Search suggestion combobox: arrow keys + Enter to accept
+        (function() {
+            var input = document.getElementById('search-input');
+            if (!input) return;
+            var activeIndex = -1;
+
+            function items() { return Array.from(document.querySelectorAll('#search-suggestions .list-group-item')); }
+
+            function setActive(idx) {
+                var list = items();
+                list.forEach(function(el, i) {
+                    var on = i === idx;
+                    el.classList.toggle('active', on);
+                    el.setAttribute('aria-selected', on ? 'true' : 'false');
+                });
+                if (idx >= 0 && list[idx]) {
+                    input.setAttribute('aria-activedescendant', list[idx].id || '');
+                    list[idx].scrollIntoView({ block: 'nearest' });
+                } else {
+                    input.removeAttribute('aria-activedescendant');
+                }
+            }
+
+            input.addEventListener('keydown', function(e) {
+                var list = items();
+                if (!list.length) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeIndex = Math.min(activeIndex + 1, list.length - 1);
+                    setActive(activeIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeIndex = Math.max(activeIndex - 1, -1);
+                    setActive(activeIndex);
+                } else if (e.key === 'Enter') {
+                    if (activeIndex >= 0 && list[activeIndex]) {
+                        e.preventDefault();
+                        input.value = list[activeIndex].textContent.trim();
+                        closeSuggestions();
+                        var form = document.getElementById('search-form');
+                        if (form) form.dispatchEvent(new Event('submit'));
+                    }
+                    activeIndex = -1;
+                }
+            });
+
+            input.addEventListener('input', function() {
+                activeIndex = -1;
+                input.setAttribute('aria-expanded', 'true');
+            });
+        })();
 
         // Column resizing (mouse + keyboard)
         (function() {
