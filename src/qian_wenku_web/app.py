@@ -5,6 +5,7 @@ import os
 import logging
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
@@ -23,6 +24,7 @@ from .access import (
     AccessRequestLimitError,
     EmailDeliveryError,
     access_database_is_healthy,
+    count_all_accounts,
     consume_magic_link,
     create_mcp_token,
     delete_magic_link,
@@ -30,10 +32,14 @@ from .access import (
     initialize_access_database,
     is_access_grant_active,
     issue_magic_link,
+    list_all_accounts,
     list_mcp_tokens,
     normalize_email,
+    reinstate_account,
+    revoke_account,
     revoke_mcp_token,
     send_magic_link,
+    send_token_revoked_notice,
     verify_turnstile,
 )
 
@@ -303,10 +309,27 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 except ValueError:
                     error = "MCP 令牌无效。"
                 else:
-                    if revoke_mcp_token(
+                    revoked_token = None
+                    for token in list_mcp_tokens(
+                        app.config['ACCESS_DATABASE_PATH'], grant_id
+                    ):
+                        if token["id"] == token_id and token["revoked_at"] is None:
+                            revoked_token = token
+                            break
+                    if revoked_token is not None and revoke_mcp_token(
                         app.config['ACCESS_DATABASE_PATH'], grant_id, token_id
                     ):
                         message = "MCP 令牌已撤销。"
+                        try:
+                            send_token_revoked_notice(
+                                app.config['RESEND_API_KEY'],
+                                app.config['ACCESS_FROM_EMAIL'],
+                                email,
+                                str(revoked_token["name"]),
+                                str(revoked_token["hint"]),
+                            )
+                        except EmailDeliveryError:
+                            app.logger.exception("Token-revoked notice failed")
                     else:
                         error = "MCP 令牌不存在或已撤销。"
             else:
@@ -332,6 +355,94 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             new_mcp_token=new_mcp_token,
         )
 
+    @app.route('/admin', methods=['GET', 'POST'])
+    def admin():
+        # Operator console: only reachable via BETA_PASSPHRASE login.
+        if not (app.config['BETA_PASSPHRASE'] and app.config['ACCESS_DATABASE_PATH']):
+            return redirect(url_for("views.index"))
+        if session.get("access_grant_id") is not None or not session.get("beta_authenticated"):
+            return redirect(url_for("views.index"))
+
+        csrf_token = session.get("account_csrf")
+        if not csrf_token:
+            csrf_token = secrets.token_urlsafe(24)
+            session["account_csrf"] = csrf_token
+
+        error = None
+        message = None
+        if request.method == 'POST':
+            supplied_csrf = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
+                error = "请刷新页面后重试。"
+            else:
+                action = request.form.get("action")
+                try:
+                    grant_id = int(request.form.get("grant_id", ""))
+                except ValueError:
+                    grant_id = 0
+                if action == "revoke_account":
+                    revoked_email = get_access_grant(
+                        app.config['ACCESS_DATABASE_PATH'], grant_id
+                    )
+                    if revoke_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                        message = "账户已撤销。"
+                        if revoked_email and app.config['RESEND_API_KEY']:
+                            try:
+                                send_token_revoked_notice(
+                                    app.config['RESEND_API_KEY'],
+                                    app.config['ACCESS_FROM_EMAIL'],
+                                    revoked_email,
+                                    "全部 MCP 令牌",
+                                    "qx_legacy",
+                                    revoked_by_operator=True,
+                                )
+                            except EmailDeliveryError:
+                                app.logger.exception("Account-revoked notice failed")
+                    else:
+                        error = "账户不存在或已撤销。"
+                elif action == "reinstate_account":
+                    if reinstate_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                        message = "账户已恢复。"
+                    else:
+                        error = "账户不存在或未撤销。"
+                else:
+                    error = "未知操作。"
+
+        try:
+            page = max(1, int(request.values.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        total = count_all_accounts(app.config['ACCESS_DATABASE_PATH'])
+        accounts = list_all_accounts(
+            app.config['ACCESS_DATABASE_PATH'],
+            limit=per_page,
+            offset=(page - 1) * per_page,
+        )
+        now_ts = int(time.time())
+        for account in accounts:
+            account["created_date"] = datetime.fromtimestamp(
+                int(account["created_at"]), timezone.utc
+            ).strftime("%Y-%m-%d")
+            if account["last_used_at"] is not None:
+                account["last_used_date"] = datetime.fromtimestamp(
+                    int(account["last_used_at"]), timezone.utc
+                ).strftime("%Y-%m-%d")
+            else:
+                account["last_used_date"] = None
+
+        return render_template(
+            'admin.html',
+            csrf_token=csrf_token,
+            error=error,
+            message=message,
+            accounts=accounts,
+            page=page,
+            total=total,
+            per_page=per_page,
+            now_ts=now_ts,
+        )
+
     @app.post('/logout')
     def logout():
         session.clear()
@@ -355,6 +466,11 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "style_version": style_version,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
+            "operator_session": bool(
+                app.config['BETA_PASSPHRASE']
+                and session.get("beta_authenticated")
+                and session.get("access_grant_id") is None
+            ),
             "magic_login_enabled": magic_login_enabled,
         }
 

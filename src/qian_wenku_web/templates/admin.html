@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block meta_description %}管理员控制台{% endblock %}
+{% block title %}用户管理 · 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+
+{% block content %}
+<main class="admin-view" id="main">
+    <section class="admin-panel" aria-labelledby="admin-title">
+        <span class="section-kicker">管理员</span>
+        <h1 id="admin-title">用户管理</h1>
+        <p class="text-muted small">共 {{ total }} 个账户。撤销账户会使其浏览器会话与所有 MCP 令牌立即失效；恢复后 MCP 令牌需重新创建。</p>
+
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        {% if message %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
+
+        <div class="admin-account-list">
+            {% for account in accounts %}
+            <div class="admin-account-row{% if account.revoked_at %} is-revoked{% endif %}">
+                <div class="admin-account-main">
+                    <strong>{{ account.email }}</strong>
+                    <span>创建于 {{ account.created_date }} ·
+                        {% if account.last_used_date %}最近登录 {{ account.last_used_date }}{% else %}从未登录{% endif %} ·
+                        MCP 令牌 {{ account.active_token_count }}/{{ account.token_count }}</span>
+                </div>
+                <div class="admin-account-actions">
+                    {% if account.revoked_at %}
+                    <span class="mcp-token-status">已撤销</span>
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="reinstate_account">
+                        <input type="hidden" name="grant_id" value="{{ account.id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                onclick="return confirm('恢复后该邮箱可重新登录。确定继续吗？')">恢复</button>
+                    </form>
+                    {% else %}
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="revoke_account">
+                        <input type="hidden" name="grant_id" value="{{ account.id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                onclick="return confirm('撤销后该用户将立即失去访问权限，其 MCP 令牌全部失效。确定继续吗？')">撤销</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <p class="text-muted">暂无账户。</p>
+            {% endfor %}
+        </div>
+
+        {% if total > per_page %}
+        <nav class="admin-pagination" aria-label="分页">
+            {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page-1) }}">上一页</a>{% endif %}
+            <span>第 {{ page }} 页 / 共 {{ ((total - 1) // per_page) + 1 }} 页</span>
+            {% if page * per_page < total %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page+1) }}">下一页</a>{% endif %}
+        </nav>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('logout') }}" class="account-logout">
+            <button type="submit" class="btn btn-outline-secondary">退出登录</button>
+        </form>
+    </section>
+</main>
+{% endblock %}

@@ -136,11 +136,22 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
     monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
     sent_links = []
+    revoked_notices = []
 
     def fake_send(*args):
         sent_links.append(args[3])
 
+    def fake_revoked_notice(api_key, sender, recipient, token_name, token_hint, **kw):
+        revoked_notices.append({
+            "recipient": recipient,
+            "name": token_name,
+            "body": f"{token_name} {token_hint}",
+        })
+
     monkeypatch.setattr("qian_wenku_web.app.send_magic_link", fake_send)
+    monkeypatch.setattr(
+        "qian_wenku_web.app.send_token_revoked_notice", fake_revoked_notice
+    )
     monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args: True)
     app = create_app(
         db_path=artifact_dir / "corpus.db",
@@ -255,6 +266,9 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
         },
     )
     assert "MCP 令牌已撤销" in revoked_token.get_data(as_text=True)
+    assert len(revoked_notices) == 1
+    assert revoked_notices[0]["recipient"] == "Researcher@example.com"
+    assert "Claude Desktop" in revoked_notices[0]["body"]
 
     assert access_client.post("/logout").status_code == 302
     with sqlite3.connect(access_db) as connection:
@@ -288,3 +302,126 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     revoked_account = access_client.get("/browse")
     assert revoked_account.status_code == 302
     assert "/login" in revoked_account.headers["Location"]
+
+
+def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.setenv("BETA_PASSPHRASE", "fixture-passphrase")
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    # Not logged in: /admin redirects.
+    assert client.get("/admin").status_code == 302
+
+    login = client.post("/login", data={"passphrase": "fixture-passphrase"})
+    assert login.status_code == 302
+
+    with sqlite3.connect(access_db) as connection:
+        connection.executemany(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES (?, ?, ?, strftime('%s','now'))",
+            [("user1@example.com", b"h1", "2026-09"), ("user2@example.com", b"h2", "2026-09")],
+        )
+
+    listing = client.get("/admin")
+    listing_text = listing.get_data(as_text=True)
+    assert listing.status_code == 200
+    assert "user1@example.com" in listing_text
+    assert "user2@example.com" in listing_text
+    with client.session_transaction() as session:
+        admin_csrf = session["account_csrf"]
+
+    revoked = client.post(
+        "/admin",
+        data={"csrf_token": admin_csrf, "action": "revoke_account", "grant_id": 1},
+    )
+    assert "账户已撤销" in revoked.get_data(as_text=True)
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT revoked_at IS NOT NULL FROM access_grants WHERE id = 1"
+        ).fetchone()[0]
+
+    individual_login = client.post(
+        "/login",
+        data={
+            "action": "consume_magic_link",
+            "csrf_token": admin_csrf,
+            "token": "qml_bad",
+        },
+    )
+    assert "请刷新页面后重试" in individual_login.get_data(as_text=True)
+    with client.session_transaction() as session:
+        login_csrf = session["login_csrf"]
+    individual_login = client.post(
+        "/login",
+        data={
+            "action": "consume_magic_link",
+            "csrf_token": login_csrf,
+            "token": "qml_bad",
+        },
+    )
+    assert "登录链接无效" in individual_login.get_data(as_text=True)
+
+    reinstated = client.post(
+        "/admin",
+        data={"csrf_token": admin_csrf, "action": "reinstate_account", "grant_id": 1},
+    )
+    assert "账户已恢复" in reinstated.get_data(as_text=True)
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT revoked_at IS NULL FROM access_grants WHERE id = 1"
+        ).fetchone()[0]
+
+    invalid_csrf = client.post(
+        "/admin", data={"csrf_token": "wrong", "action": "revoke_account", "grant_id": 1}
+    )
+    assert "请刷新页面后重试" in invalid_csrf.get_data(as_text=True)
+
+    assert client.post("/logout").status_code == 302
+    assert client.get("/admin").status_code == 302
+
+
+def test_admin_hidden_for_individual_sessions(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setattr("qian_wenku_web.app.send_magic_link", lambda *args: None)
+    monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args, **kw: True)
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    client.get("/login")
+    with client.session_transaction() as session:
+        login_csrf = session["login_csrf"]
+    client.post("/login", data={"csrf_token": login_csrf, "email": "user@example.com"})
+    from qian_wenku_web.access import issue_magic_link, consume_magic_link
+    _, token = issue_magic_link(
+        str(access_db), "fixture-access-secret", "user@example.com", "/",
+        cooldown_seconds=0,
+    )
+    grant_id, _ = consume_magic_link(str(access_db), "fixture-access-secret", token)
+    with client.session_transaction() as session:
+        session.clear()
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = grant_id
+    assert client.get("/admin").status_code == 302

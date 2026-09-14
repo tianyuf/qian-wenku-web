@@ -429,6 +429,76 @@ def revoke_mcp_token(path: str, grant_id: int, token_id: int) -> bool:
     return cursor.rowcount == 1
 
 
+def list_all_accounts(
+    path: str, limit: int = 200, offset: int = 0
+) -> list[dict[str, object]]:
+    """List accounts with activity and token counts for operator review."""
+    with _read_only_connection(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT account.id, account.email, account.requested_at,
+                   account.revoked_at, account.last_used_at,
+                   COUNT(token.id) AS token_count,
+                   SUM(token.revoked_at IS NULL) AS active_token_count
+            FROM access_grants AS account
+            LEFT JOIN mcp_tokens AS token ON token.grant_id = account.id
+            GROUP BY account.id
+            ORDER BY account.requested_at DESC, account.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+    accounts = []
+    for row in rows:
+        accounts.append({
+            "id": int(row[0]),
+            "email": str(row[1]),
+            "created_at": int(row[2]),
+            "revoked_at": int(row[3]) if row[3] is not None else None,
+            "last_used_at": int(row[4]) if row[4] is not None else None,
+            "token_count": int(row[5]),
+            "active_token_count": int(row[6]),
+        })
+    return accounts
+
+
+def count_all_accounts(path: str) -> int:
+    """Return the total number of accounts for pagination."""
+    with _read_only_connection(path) as connection:
+        return int(connection.execute(
+            "SELECT COUNT(*) FROM access_grants"
+        ).fetchone()[0])
+
+
+def revoke_account(path: str, grant_id: int) -> bool:
+    """Revoke one account; its browser sessions and MCP tokens stop working."""
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            "UPDATE access_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (now, grant_id),
+        )
+        if cursor.rowcount == 1:
+            connection.execute(
+                "UPDATE mcp_tokens SET revoked_at = ? "
+                "WHERE grant_id = ? AND revoked_at IS NULL",
+                (now, grant_id),
+            )
+            return True
+    return False
+
+
+def reinstate_account(path: str, grant_id: int) -> bool:
+    """Reinstate one account. MCP tokens stay revoked until recreated."""
+    with sqlite3.connect(path, timeout=5) as connection:
+        cursor = connection.execute(
+            "UPDATE access_grants SET revoked_at = NULL WHERE id = ? AND revoked_at IS NOT NULL",
+            (grant_id,),
+        )
+    return cursor.rowcount == 1
+
+
 def verify_mcp_token(path: str, secret: str, token: str) -> bool:
     """Validate an MCP token without requiring write access to the database."""
     if not token.startswith(("qx_", "qxmcp_")) or len(token) > 128:
@@ -530,22 +600,78 @@ def send_magic_link(
     """Send a single-use login link through Resend's HTTPS API."""
     login_url = f"{base_url.rstrip('/')}/login#token={token}"
     safe_login_url = html.escape(login_url, quote=True)
-    payload = {
-        "from": sender,
-        "to": [recipient],
-        "subject": "登录 qianxuesen.org",
-        "text": (
+    _send_email(
+        api_key,
+        sender,
+        recipient,
+        subject="登录 qianxuesen.org",
+        text=(
             "请使用以下一次性链接登录 qianxuesen.org：\n\n"
             f"{login_url}\n\n"
             "链接将在 15 分钟后失效，且仅可使用一次。"
             "如非本人操作，可忽略本邮件。"
         ),
-        "html": (
+        html=(
             "<p>请使用以下一次性链接登录 qianxuesen.org：</p>"
             f'<p><a href="{safe_login_url}">点击登录</a></p>'
             "<p>链接将在 15 分钟后失效，且仅可使用一次。"
             "如非本人操作，可忽略本邮件。</p>"
         ),
+        idempotency_key=f"qian-wenku-magic-link-{link_id}",
+    )
+
+
+def send_token_revoked_notice(
+    api_key: str,
+    sender: str,
+    recipient: str,
+    token_name: str,
+    token_hint: str,
+    revoked_by_operator: bool = False,
+) -> None:
+    """Notify the account owner that an MCP token was revoked."""
+    if revoked_by_operator:
+        reason = "管理员已撤销您的一个 MCP 访问令牌。"
+    else:
+        reason = "您（或使用该令牌的人）撤销了一个 MCP 访问令牌。"
+    _send_email(
+        api_key,
+        sender,
+        recipient,
+        subject="MCP 访问令牌已撤销 · qianxuesen.org",
+        text=(
+            f"{reason}\n\n"
+            f"令牌名称：{token_name}\n"
+            f"令牌标识：{token_hint}\n\n"
+            "该令牌已立即失效。如非本人操作，请尽快登录并检查您的账户。"
+        ),
+        html=(
+            f"<p>{reason}</p>"
+            f"<p>令牌名称：<strong>{html.escape(token_name)}</strong><br>"
+            f"令牌标识：<code>{html.escape(token_hint)}</code></p>"
+            "<p>该令牌已立即失效。如非本人操作，请尽快登录并检查您的账户。</p>"
+        ),
+        idempotency_key=f"qian-wenku-token-revoked-{token_hint}",
+    )
+
+
+def _send_email(
+    api_key: str,
+    sender: str,
+    recipient: str,
+    *,
+    subject: str,
+    text: str,
+    html: str,
+    idempotency_key: str,
+) -> None:
+    """POST one message through Resend's HTTPS API."""
+    payload = {
+        "from": sender,
+        "to": [recipient],
+        "subject": subject,
+        "text": text,
+        "html": html,
     }
     request = Request(
         "https://api.resend.com/emails",
@@ -553,7 +679,7 @@ def send_magic_link(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "Idempotency-Key": f"qian-wenku-magic-link-{link_id}",
+            "Idempotency-Key": idempotency_key,
             "User-Agent": "qian-wenku-web/0.1",
         },
         method="POST",
@@ -563,4 +689,4 @@ def send_magic_link(
             if response.status not in {200, 201}:
                 raise EmailDeliveryError(f"Resend returned HTTP {response.status}")
     except (HTTPError, URLError, TimeoutError) as error:
-        raise EmailDeliveryError("Resend could not deliver the magic link") from error
+        raise EmailDeliveryError("Resend could not deliver the email") from error
