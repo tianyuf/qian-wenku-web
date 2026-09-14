@@ -412,9 +412,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     int(mcp_token["last_used_at"]), timezone.utc
                 ).strftime("%Y-%m-%d")
 
-        # Favorites with entry metadata for display.
-        favorites = _load_favorites(app, grant_id)
-
         return render_template(
             'account.html',
             account_email=email,
@@ -424,7 +421,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             message=message,
             mcp_tokens=mcp_tokens,
             new_mcp_token=new_mcp_token,
-            favorites=favorites,
         )
 
     @app.route('/favorites')

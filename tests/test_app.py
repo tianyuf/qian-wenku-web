@@ -622,10 +622,12 @@ def test_favorites_flow(artifact_dir, tmp_path, monkeypatch):
     assert 'data-favorited="1"' in entry_text
     assert "★ 已收藏" in entry_text
 
-    account_page = client.get("/account")
-    account_text = account_page.get_data(as_text=True)
-    assert "收藏" in account_text
-    assert "/e/nianpu-19111211-a" in account_text
+    favorites_page = client.get("/favorites")
+    favorites_text = favorites_page.get_data(as_text=True)
+    assert "收藏" in favorites_text
+    assert "/e/nianpu-19111211-a" in favorites_text
+    # The account page no longer duplicates the favorites list.
+    assert "/e/nianpu-19111211-a" not in client.get("/account").get_data(as_text=True)
 
 
 def test_favorites_api_with_mcp_token(artifact_dir, tmp_path, monkeypatch):
