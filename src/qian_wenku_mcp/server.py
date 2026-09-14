@@ -287,8 +287,9 @@ def list_favorites() -> dict[str, Any]:
 
     Only available on the hosted server when connected with an individual
     MCP token. Returns each favorite's entry id, title, source, date, page,
-    permalink_url and citation, ordered newest first. Use get_entry on any
-    of the returned entry ids for the full transcript.
+    permalink_url, citation and the user's annotations on it (notes with
+    highlighted quotes), ordered newest first. Use get_entry on any of the
+    returned entry ids for the full transcript.
     """
     if not _service_token:
         return {
@@ -311,6 +312,9 @@ def list_favorites() -> dict[str, Any]:
             f"{favorite.get('title') or ''}，{favorite.get('date_display') or ''}，"
             f"第{favorite.get('start_page')}页。"
         )
+        for note in favorite.get("notes") or []:
+            note.pop("created_at", None)
+            note.pop("updated_at", None)
     return {"favorites": favorites, "total": payload.get("total", 0)}
 
 

@@ -442,7 +442,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         )
 
     def _load_favorites(app, grant_id):
-        """Entry metadata for an account's favorites, newest first."""
+        """Entry metadata + notes for an account's favorites, newest first."""
         favorites = []
         with NianpuDatabase(app.config['DATABASE_PATH']) as fav_db:
             for fav in list_favorites(app.config['ACCESS_DATABASE_PATH'], grant_id):
@@ -463,6 +463,9 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     row = None
                 if row is None:
                     continue
+                notes = list_entry_notes(
+                    app.config['ACCESS_DATABASE_PATH'], grant_id, fav["entry_id"]
+                )
                 favorites.append({
                     "entry_id": fav["entry_id"],
                     "permalink": row["permalink"],
@@ -472,6 +475,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     "content_type": row["content_type"] or "nianpu",
                     "source_title": row["source_title"],
                     "start_page": row["start_page"],
+                    "notes": notes,
                 })
         return favorites
 

@@ -818,3 +818,56 @@ def test_numeric_permalink_redirects_to_canonical(client, artifact_dir):
     # Unknown permalinks still 404.
     assert client.get("/e/nonexistent-permalink").status_code == 404
     assert client.get("/e/999999").status_code == 404
+
+
+def test_favorites_show_notes_and_highlight_markers(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Reader@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = 1
+        session.permanent = True
+
+    client.post("/api/favorites", data={"entry_id": "1"})
+    created = client.post(
+        "/api/notes", data={"entry_id": "1", "body": "重点段落", "quote": "合成"}
+    )
+    assert created.status_code == 201
+
+    # Favorites page shows the note with its highlighted quote.
+    favorites_text = client.get("/favorites").get_data(as_text=True)
+    assert "「合成」" in favorites_text
+    assert "重点段落" in favorites_text
+
+    # MCP-facing API includes notes with favorites.
+    from qian_wenku_web.access import create_mcp_token
+    _, mcp_token = create_mcp_token(str(access_db), "fixture-access-secret", 1, "C")
+    payload = client.get(
+        "/api/favorites", headers={"Authorization": f"Bearer {mcp_token}"}
+    ).get_json()
+    notes = payload["favorites"][0]["notes"]
+    assert len(notes) == 1
+    assert notes[0]["quote"] == "合成"
+    assert notes[0]["body"] == "重点段落"

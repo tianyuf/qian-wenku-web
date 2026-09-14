@@ -1327,6 +1327,15 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     color: #a13f35;
 }
 
+/* Visually highlighted text linked to an annotation */
+.entry-full-content mark.entry-highlight {
+    background: var(--accent-soft);
+    color: inherit;
+    padding: 0.05em 0.1em;
+    border-bottom: 2px solid var(--accent);
+    cursor: pointer;
+}
+
 .favorite-row {
     display: flex;
     align-items: center;
@@ -1354,6 +1363,30 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     margin-top: 0.15rem;
     color: var(--muted);
     font-size: 0.75rem;
+}
+
+.favorite-notes {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.favorite-note {
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface-muted);
+}
+
+.favorite-note .entry-note-quote {
+    margin: 0 0 0.3rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+.favorite-note .entry-note-body {
+    font-size: 0.85rem;
 }
 
 .admin-view {

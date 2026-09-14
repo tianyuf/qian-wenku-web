@@ -365,6 +365,54 @@
                     '<div class="entry-note-meta"><button type="button" class="btn btn-sm btn-link entry-note-delete">删除</button></div>';
                 list.appendChild(div);
             });
+            applyHighlights(data.notes);
+        });
+    }
+
+    // Visually highlight annotated quotes inside the entry content.
+    var contentEl = document.querySelector('.entry-full-content');
+    function applyHighlights(notes) {
+        if (!contentEl) return;
+        // Reset previous highlights.
+        contentEl.querySelectorAll('mark.entry-highlight').forEach(function(mark) {
+            var parent = mark.parentNode;
+            parent.replaceChild(document.createTextNode(mark.textContent), mark);
+            parent.normalize();
+        });
+        notes.forEach(function(note) {
+            if (!note.quote) return;
+            var target = note.quote;
+            var done = false;
+            var walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, {
+                acceptNode: function(node) {
+                    return node.parentNode.closest('script, style, #entry-notes') ?
+                        NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            while (walker.nextNode() && !done) {
+                var node = walker.currentNode;
+                var idx = node.nodeValue.indexOf(target);
+                if (idx === -1) continue;
+                var range = document.createRange();
+                range.setStart(node, idx);
+                range.setEnd(node, idx + target.length);
+                var mark = document.createElement('mark');
+                mark.className = 'entry-highlight';
+                mark.title = '关联批注：' + (note.body || '').slice(0, 80);
+                try {
+                    range.surroundContents(mark);
+                    done = true;
+                } catch (err) {
+                    // Quote crosses element boundaries; skip.
+                }
+            }
+        });
+        // Clicking a highlight scrolls to its note.
+        contentEl.querySelectorAll('mark.entry-highlight').forEach(function(mark) {
+            mark.addEventListener('click', function() {
+                var notesPanel = document.getElementById('entry-notes');
+                if (notesPanel) notesPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
         });
     }
 

@@ -17,6 +17,16 @@
                 <div>
                     <a href="{{ url_for('views.entry_permalink', permalink=fav.permalink) }}">{{ fav.title }}</a>
                     <span>{{ fav.source_title }} · {{ fav.date_display }} · 第 {{ fav.start_page }} 页</span>
+                    {% if fav.notes %}
+                    <div class="favorite-notes">
+                        {% for note in fav.notes %}
+                        <div class="favorite-note">
+                            {% if note.quote %}<blockquote class="entry-note-quote">「{{ note.quote }}」</blockquote>{% endif %}
+                            <div class="entry-note-body">{{ note.body }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
                 <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-remove-form">
                     <input type="hidden" name="entry_id" value="{{ fav.entry_id }}">
