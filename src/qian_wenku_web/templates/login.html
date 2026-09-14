@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block meta_description %}钱学森文库内测访问{% endblock %}
+{% block meta_description %}钱学森文库{% endblock %}
 {% block title %}钱学森文库{% endblock %}
 {% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
 {% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
@@ -10,14 +10,14 @@
 {% block content %}
 <main class="login-view" id="main">
     <section class="login-panel" aria-labelledby="login-title">
-        <h1 id="login-title">访问文库</h1>
+        <h1 id="login-title">登录</h1>
         {% if submitted %}
         <p class="login-description access-success">登录链接已发送至您的邮箱。链接仅可使用一次，并将在 15 分钟后失效。</p>
         <a class="btn btn-primary w-100" href="{{ url_for('login', next=next_url) }}">重新发送</a>
         {% elif magic_login_enabled %}
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <div id="magic-link-confirm" hidden>
-            <p class="login-description">确认在此浏览器中登录钱学森文库。</p>
+            <p class="login-description">确认在此浏览器中登录 qianxuesen.org。</p>
             <form method="post" class="login-form">
                 <input type="hidden" name="action" value="consume_magic_link">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -26,7 +26,7 @@
             </form>
         </div>
         <div id="email-login-request">
-            <p class="login-description">输入您的邮箱，我们会发送一个一次性登录链接。</p>
+            <p class="login-description">输入您的邮箱，本站会发送一个一次性登录链接。</p>
             <form method="post" class="login-form">
                 <input type="hidden" name="next" value="{{ next_url }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
