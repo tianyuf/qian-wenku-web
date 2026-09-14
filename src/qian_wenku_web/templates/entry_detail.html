@@ -452,6 +452,13 @@
             if (data.deleted) noteDiv.remove();
         });
     });
+
+    // Apply highlights to server-rendered notes on initial page load.
+    var initialNotes = [];
+    {% for note in entry_notes %}
+    initialNotes.push({ quote: {{ note.quote|tojson }}, body: {{ note.body|tojson }} });
+    {% endfor %}
+    applyHighlights(initialNotes);
 })();
 </script>
 <script>
