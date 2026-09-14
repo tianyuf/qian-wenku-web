@@ -425,3 +425,74 @@ def test_admin_hidden_for_individual_sessions(artifact_dir, tmp_path, monkeypatc
         session["beta_authenticated"] = True
         session["access_grant_id"] = grant_id
     assert client.get("/admin").status_code == 302
+
+
+def test_admin_emails_grant_console_access(artifact_dir, tmp_path, monkeypatch):
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("ADMIN_EMAILS", "Owner@Example.COM, other@example.com")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setattr("qian_wenku_web.app.send_magic_link", lambda *args: None)
+    monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args, **kw: True)
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    from qian_wenku_web.access import (
+        consume_magic_link,
+        create_mcp_token,
+        issue_magic_link,
+    )
+
+    client.get("/login")
+    with client.session_transaction() as session:
+        login_csrf = session["login_csrf"]
+    client.post("/login", data={"csrf_token": login_csrf, "email": "Owner@example.com"})
+    _, token = issue_magic_link(
+        str(access_db), "fixture-access-secret", "owner@example.com", "/",
+        cooldown_seconds=0,
+    )
+    grant_id, _ = consume_magic_link(str(access_db), "fixture-access-secret", token)
+    with client.session_transaction() as session:
+        session.clear()
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = grant_id
+        session["account_csrf"] = "admin-csrf"
+
+    # Owner email (case-insensitive) sees the console.
+    page = client.get("/admin")
+    assert page.status_code == 200
+    assert "用户管理" in page.get_data(as_text=True)
+
+    # Non-admin account cannot.
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('regular@example.com', 'x', '2026-09', strftime('%s','now'))"
+        )
+        regular_id = connection.execute(
+            "SELECT id FROM access_grants WHERE email = 'regular@example.com'"
+        ).fetchone()[0]
+    with client.session_transaction() as session:
+        session["access_grant_id"] = regular_id
+    assert client.get("/admin").status_code == 302
+
+    # Revoking the owner's account removes admin access too.
+    with client.session_transaction() as session:
+        session["access_grant_id"] = grant_id
+        session["account_csrf"] = "admin-csrf"
+    created = create_mcp_token(
+        str(access_db), "fixture-access-secret", grant_id, "Test"
+    )
+    assert created is not None

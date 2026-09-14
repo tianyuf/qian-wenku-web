@@ -35,9 +35,11 @@
                 <a class="nav-link {% if request.path == '/mcp' %}active{% endif %}" href="{{ url_for('views.mcp_guide') }}">MCP</a>
                 {% if individual_account %}
                 <a class="nav-link {% if request.path == '/account' %}active{% endif %}" href="{{ url_for('account') }}">账户</a>
-                {% elif operator_session %}
+                {% endif %}
+                {% if operator_session %}
                 <a class="nav-link {% if request.path == '/admin' %}active{% endif %}" href="{{ url_for('admin') }}">管理</a>
-                {% elif beta_auth_enabled %}
+                {% endif %}
+                {% if not individual_account and not operator_session and beta_auth_enabled %}
                 <form method="post" action="{{ url_for('logout') }}" class="logout-form">
                     <button type="submit" class="nav-link logout-button">退出</button>
                 </form>

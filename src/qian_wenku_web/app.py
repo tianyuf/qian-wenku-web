@@ -64,6 +64,11 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         f"{app.config['R2_CDN_BASE'].rstrip('/')}/{app.config['R2_PREFIX'].strip('/')}"
     )
     app.config['BETA_PASSPHRASE'] = os.getenv("BETA_PASSPHRASE", "")
+    app.config['ADMIN_EMAILS'] = {
+        email.casefold().strip()
+        for email in os.getenv("ADMIN_EMAILS", "").split(",")
+        if email.strip()
+    }
     app.config['ACCESS_DATABASE_PATH'] = os.getenv("ACCESS_DATABASE_PATH", "")
     app.config['ACCESS_CODE_SECRET'] = os.getenv("ACCESS_CODE_SECRET", "")
     app.config['ACCESS_HOURLY_LIMIT'] = int(os.getenv("ACCESS_HOURLY_LIMIT", "100"))
@@ -127,6 +132,18 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
             return url_for("views.index")
         return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+
+    def session_is_admin():
+        """Admin = operator passphrase session, or email in ADMIN_EMAILS."""
+        if not session.get("beta_authenticated"):
+            return False
+        grant_id = session.get("access_grant_id")
+        if grant_id is None:
+            return bool(app.config['BETA_PASSPHRASE'])
+        if not app.config['ACCESS_DATABASE_PATH'] or not app.config['ADMIN_EMAILS']:
+            return False
+        email = get_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        return email is not None and email.casefold() in app.config['ADMIN_EMAILS']
 
     @app.before_request
     def require_beta_login():
@@ -357,10 +374,9 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.route('/admin', methods=['GET', 'POST'])
     def admin():
-        # Operator console: only reachable via BETA_PASSPHRASE login.
-        if not (app.config['BETA_PASSPHRASE'] and app.config['ACCESS_DATABASE_PATH']):
-            return redirect(url_for("views.index"))
-        if session.get("access_grant_id") is not None or not session.get("beta_authenticated"):
+        # Operator console: passphrase session, or an account whose email is
+        # listed in ADMIN_EMAILS.
+        if not (app.config['ACCESS_DATABASE_PATH'] and session_is_admin()):
             return redirect(url_for("views.index"))
 
         csrf_token = session.get("account_csrf")
@@ -466,11 +482,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "style_version": style_version,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
-            "operator_session": bool(
-                app.config['BETA_PASSPHRASE']
-                and session.get("beta_authenticated")
-                and session.get("access_grant_id") is None
-            ),
+            "operator_session": bool(app.config['BETA_PASSPHRASE']) and session_is_admin(),
             "magic_login_enabled": magic_login_enabled,
         }
 
