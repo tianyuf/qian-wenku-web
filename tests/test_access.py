@@ -241,7 +241,7 @@ def test_send_magic_link_uses_resend_api(monkeypatch):
     assert request.headers["User-agent"] == "qian-wenku-web/0.1"
     assert payload["to"] == ["reader@example.com"]
     assert "qml_example" in payload["text"]
-    assert "expires in 15 minutes" in payload["text"]
+    assert "15 分钟后失效" in payload["text"]
     assert "https://archive.example.com/login#token=" in payload["html"]
     assert captured["timeout"] == 5
 

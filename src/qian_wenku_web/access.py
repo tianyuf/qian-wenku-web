@@ -533,18 +533,18 @@ def send_magic_link(
     payload = {
         "from": sender,
         "to": [recipient],
-        "subject": "Sign in to the Qian Xuesen Archive",
+        "subject": "登录钱学森文库",
         "text": (
-            "Use this single-use link to sign in to the Qian Xuesen Archive:\n\n"
+            "请使用以下一次性链接登录钱学森文库：\n\n"
             f"{login_url}\n\n"
-            "This link expires in 15 minutes. If you did not request it, "
-            "you can ignore this email."
+            "链接将在 15 分钟后失效，且仅可使用一次。"
+            "如非本人操作，可忽略本邮件。"
         ),
         "html": (
-            "<p>Use this single-use link to sign in to the Qian Xuesen Archive:</p>"
-            f'<p><a href="{safe_login_url}">Sign in to the archive</a></p>'
-            "<p>This link expires in 15 minutes. If you did not request it, "
-            "you can ignore this email.</p>"
+            "<p>请使用以下一次性链接登录钱学森文库：</p>"
+            f'<p><a href="{safe_login_url}">点击登录</a></p>'
+            "<p>链接将在 15 分钟后失效，且仅可使用一次。"
+            "如非本人操作，可忽略本邮件。</p>"
         ),
     }
     request = Request(
