@@ -826,30 +826,17 @@ mark.highlight {
     vertical-align: baseline;
 }
 
-.content-type-badge::before {
-    content: '·';
-    margin-right: 2px;
-    font-weight: 700;
-    opacity: 0.65;
-}
-
 .content-type-badge.wenji {
     color: #6b4c1e;
 }
-
-.content-type-badge.wenji::before { content: '文'; }
 
 .content-type-badge.shuxin {
     color: #1a524a;
 }
 
-.content-type-badge.shuxin::before { content: '信'; }
-
 .content-type-badge.nianpu {
     color: #2d4a28;
 }
-
-.content-type-badge.nianpu::before { content: '谱'; }
 
 .entity-type-badge {
     display: inline;
@@ -859,25 +846,18 @@ mark.highlight {
     vertical-align: baseline;
 }
 
-.entity-type-badge::before {
-    content: '·';
-    margin-right: 2px;
-    font-weight: 700;
-    opacity: 0.65;
-}
-
 /* Entity badges use a distinct hue (indigo) from content-type badges (green/brown) */
 .entity-type-badge.person {
     color: #3b3f8f;
 }
 
-.entity-type-badge.person::before { content: '人'; }
+.entity-type-badge.person::before { content: '·'; margin-right: 0.25em; opacity: 0.6; }
 
 .entity-type-badge.organization {
     color: #6d2e6d;
 }
 
-.entity-type-badge.organization::before { content: '构'; }
+.entity-type-badge.organization::before { content: '·'; margin-right: 0.25em; opacity: 0.6; }
 
 @media print {
     .app-header,
