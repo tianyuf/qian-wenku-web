@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}确认更换邮箱 - 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+
+{% block content %}
+<main class="login-view" id="main">
+    <section class="login-panel" aria-labelledby="email-change-title">
+        <span class="section-kicker">文库访问</span>
+        <h1 id="email-change-title">确认更换邮箱</h1>
+        {% if error %}
+        <div class="login-error" role="alert">确认链接无效、已使用或已过期。请回到账户页面重新发起更换。</div>
+        {% else %}
+        <p>确认后，新的邮箱将用于登录钱学森文库。</p>
+        <form method="post" id="email-change-form" class="login-form" hidden>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="token" id="email-change-token" value="">
+            <button type="submit" class="btn btn-primary">确认更换邮箱</button>
+        </form>
+        <p class="text-muted small" id="email-change-loading">正在验证确认链接…</p>
+        <noscript><p class="login-error" role="alert">请在启用 JavaScript 后打开此确认链接。</p></noscript>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+{% if not error %}
+<script>
+(function() {
+    var token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+    if (!token || !token.startsWith('qml_')) {
+        document.getElementById('email-change-loading').textContent = '确认链接无效。';
+        return;
+    }
+    document.getElementById('email-change-token').value = token;
+    document.getElementById('email-change-form').hidden = false;
+    document.getElementById('email-change-loading').hidden = true;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+})();
+</script>
+{% endif %}
+{% endblock %}

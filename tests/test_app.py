@@ -258,7 +258,7 @@ def test_individual_access_request_and_login(artifact_dir, tmp_path, monkeypatch
     assert revoked_notices[0]["recipient"] == "Researcher@example.com"
     assert "Claude Desktop" in revoked_notices[0]["body"]
 
-    assert access_client.post("/logout").status_code == 302
+    assert access_client.post("/logout", data={"csrf_token": account_csrf}).status_code == 302
     with sqlite3.connect(access_db) as connection:
         connection.execute("UPDATE magic_links SET created_at = 0")
     access_client.get("/login?next=/browse")
@@ -378,7 +378,7 @@ def test_admin_console_manages_accounts(artifact_dir, tmp_path, monkeypatch):
     )
     assert "请刷新页面后重试" in invalid_csrf.get_data(as_text=True)
 
-    assert client.post("/logout").status_code == 302
+    assert client.post("/logout", data={"csrf_token": admin_csrf}).status_code == 302
     assert client.get("/admin").status_code == 302
 
 
@@ -555,8 +555,15 @@ def test_email_change_flow(artifact_dir, tmp_path, monkeypatch):
             "SELECT email FROM access_grants WHERE id = 1"
         ).fetchone()[0] == "Old@Example.com"
 
-    # Confirm via the link.
-    confirmed = client.get(f"/account/email-change?token={token}")
+    # The email token stays in the fragment; confirmation is a CSRF-protected POST.
+    confirm_page = client.get("/account/email-change")
+    assert confirm_page.status_code == 200
+    with client.session_transaction() as session:
+        email_change_csrf = session["email_change_csrf"]
+    confirmed = client.post(
+        "/account/email-change",
+        data={"csrf_token": email_change_csrf, "token": token},
+    )
     assert confirmed.status_code == 302
     with sqlite3.connect(access_db) as connection:
         row = connection.execute(
@@ -600,6 +607,7 @@ def test_favorites_flow(artifact_dir, tmp_path, monkeypatch):
         session["beta_authenticated"] = True
         session["access_grant_id"] = 1
         session.permanent = True
+        session["account_csrf"] = "fixture-csrf"
 
     # Entry 1 renders with favorite controls for account sessions.
     entry_page = client.get("/e/nianpu-19111211-a")
@@ -608,15 +616,15 @@ def test_favorites_flow(artifact_dir, tmp_path, monkeypatch):
     # Not logged in: no star button, API rejects.
     anon = app.test_client()
     assert 'id="favorite-btn"' not in anon.get("/e/nianpu-19111211-a").get_data(as_text=True)
-    assert anon.post("/api/favorites", data={"entry_id": "1"}).status_code == 401
+    assert anon.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"}).status_code == 401
 
-    first = client.post("/api/favorites", data={"entry_id": "1"})
+    first = client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"})
     assert first.get_json() == {"favorited": True}
-    second = client.post("/api/favorites", data={"entry_id": "1"})
+    second = client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"})
     assert second.get_json() == {"favorited": False}
 
     # Toggle on again and check account listing.
-    assert client.post("/api/favorites", data={"entry_id": "1"}).get_json() == {"favorited": True}
+    assert client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"}).get_json() == {"favorited": True}
     entry_page = client.get("/e/nianpu-19111211-a")
     entry_text = entry_page.get_data(as_text=True)
     assert 'data-favorited="1"' in entry_text
@@ -660,7 +668,8 @@ def test_favorites_api_with_mcp_token(artifact_dir, tmp_path, monkeypatch):
         session["beta_authenticated"] = True
         session["access_grant_id"] = 1
         session.permanent = True
-    client.post("/api/favorites", data={"entry_id": "1"})
+        session["account_csrf"] = "fixture-csrf"
+    client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"})
 
     from qian_wenku_web.access import create_mcp_token
     _, mcp_token = create_mcp_token(
@@ -728,6 +737,7 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
         session["beta_authenticated"] = True
         session["access_grant_id"] = 1
         session.permanent = True
+        session["account_csrf"] = "fixture-csrf"
 
     # Entry page shows the notes section.
     entry_text = client.get("/e/nianpu-19111211-a").get_data(as_text=True)
@@ -735,12 +745,12 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
 
     # Anonymous users cannot annotate.
     anon = app.test_client()
-    assert anon.post("/api/notes", data={"entry_id": "1", "body": "x"}).status_code == 401
+    assert anon.post("/api/notes", data={"csrf_token": "fixture-csrf", "entry_id": "1", "body": "x"}).status_code == 401
 
     # Add a note with a highlight quote.
     created = client.post(
         "/api/notes",
-        data={"entry_id": "1", "body": "这一段很重要", "quote": "合成"},
+        data={"csrf_token": "fixture-csrf", "entry_id": "1", "body": "这一段很重要", "quote": "合成"},
     )
     assert created.status_code == 201
     note_id = created.get_json()["note_id"]
@@ -758,16 +768,16 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
 
     # Update the note.
     updated = client.put(
-        f"/api/notes/{note_id}", data={"body": "更新后的批注"}
+        f"/api/notes/{note_id}", data={"body": "更新后的批注", "csrf_token": "fixture-csrf"}
     )
     assert updated.get_json() == {"updated": True}
     assert client.get("/api/notes?entry_id=1").get_json()["notes"][0]["body"] == "更新后的批注"
 
     # Validation: empty body rejected.
-    assert client.put(f"/api/notes/{note_id}", data={"body": " "}).status_code == 400
+    assert client.put(f"/api/notes/{note_id}", data={"body": " ", "csrf_token": "fixture-csrf"}).status_code == 400
 
     # Delete the note.
-    deleted = client.delete(f"/api/notes/{note_id}")
+    deleted = client.delete(f"/api/notes/{note_id}", headers={"X-CSRF-Token": "fixture-csrf"})
     assert deleted.get_json() == {"deleted": True}
     assert client.get("/api/notes?entry_id=1").get_json()["total"] == 0
 
@@ -781,11 +791,11 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
             "SELECT id FROM access_grants WHERE email = 'Other@example.com'"
         ).fetchone()[0]
     recreated = client.post(
-        "/api/notes", data={"entry_id": "1", "body": "keep"}
+        "/api/notes", data={"csrf_token": "fixture-csrf", "entry_id": "1", "body": "keep"}
     ).get_json()
     with client.session_transaction() as session:
         session["access_grant_id"] = other_id
-    forbidden = client.delete(f"/api/notes/{recreated['note_id']}")
+    forbidden = client.delete(f"/api/notes/{recreated['note_id']}", headers={"X-CSRF-Token": "fixture-csrf"})
     assert forbidden.status_code == 404
 
     # MCP token path: create a token, list notes forwarded.
@@ -849,10 +859,11 @@ def test_favorites_show_notes_and_highlight_markers(artifact_dir, tmp_path, monk
         session["beta_authenticated"] = True
         session["access_grant_id"] = 1
         session.permanent = True
+        session["account_csrf"] = "fixture-csrf"
 
-    client.post("/api/favorites", data={"entry_id": "1"})
+    client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"})
     created = client.post(
-        "/api/notes", data={"entry_id": "1", "body": "重点段落", "quote": "合成"}
+        "/api/notes", data={"csrf_token": "fixture-csrf", "entry_id": "1", "body": "重点段落", "quote": "合成"}
     )
     assert created.status_code == 201
 
@@ -902,10 +913,11 @@ def test_favorites_annotations_section(artifact_dir, tmp_path, monkeypatch):
         session["beta_authenticated"] = True
         session["access_grant_id"] = 1
         session.permanent = True
+        session["account_csrf"] = "fixture-csrf"
 
     # Favorite entry 1; annotate entry 2 (not favorited).
-    client.post("/api/favorites", data={"entry_id": "1"})
-    client.post("/api/notes", data={"entry_id": "2", "body": "另一条的批注", "quote": "钱学森"})
+    client.post("/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"})
+    client.post("/api/notes", data={"csrf_token": "fixture-csrf", "entry_id": "2", "body": "另一条的批注", "quote": "钱学森"})
 
     page = client.get("/favorites").get_data(as_text=True)
     assert "我的批注" in page

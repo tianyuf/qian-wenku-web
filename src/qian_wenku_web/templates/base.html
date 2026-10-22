@@ -49,6 +49,7 @@
                 {% endif %}
                 {% if not individual_account and not operator_session and beta_auth_enabled %}
                 <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    <input type="hidden" name="csrf_token" value="{{ account_csrf_token }}">
                     <button type="submit" class="nav-link logout-button">退出</button>
                 </form>
                 {% endif %}
@@ -215,6 +216,16 @@
         }
 
         document.addEventListener('click', function(e) {
+            var suggestion = e.target.closest && e.target.closest('#search-suggestions [data-search-value]');
+            if (suggestion) {
+                e.preventDefault();
+                var input = document.getElementById('search-input');
+                var form = document.getElementById('search-form');
+                if (input) input.value = suggestion.dataset.searchValue;
+                closeSuggestions();
+                if (form) form.dispatchEvent(new Event('submit'));
+                return;
+            }
             var sug = document.getElementById('search-suggestions');
             var box = document.querySelector('.search-panel');
             if (sug && box && !box.contains(e.target)) { closeSuggestions(); }

@@ -412,19 +412,7 @@ def search_suggest():
     if not suggestions:
         return ''
 
-    html = '<div class="list-group list-group-flush" role="listbox">'
-    for i, s in enumerate(suggestions):
-        escaped = escape(s)
-        json_val = json.dumps(s, ensure_ascii=False)
-        html += (
-            f'<a href="#" id="search-suggestion-{i}" class="list-group-item list-group-item-action py-1 small" '
-            f'role="option" aria-selected="false" '
-            f'onclick="document.querySelector(\'input[name=q]\').value={json_val};'
-            f'document.getElementById(\'search-form\').dispatchEvent(new Event(\'submit\'));'
-            f'this.closest(\'.list-group\').remove();return false;">{escaped}</a>'
-        )
-    html += '</div>'
-    return html
+    return render_template('search_suggestions.html', suggestions=suggestions)
 
 
 @views_bp.route('/browse')

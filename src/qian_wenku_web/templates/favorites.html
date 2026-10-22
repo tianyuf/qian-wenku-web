@@ -7,6 +7,7 @@
 {% block content %}
 <main class="favorites-view" id="main">
     <section class="favorites-panel" aria-labelledby="favorites-title">
+        <p class="visually-hidden" id="favorites-status" role="status" aria-live="polite"></p>
         <span class="section-kicker">文库访问</span>
         <h1 id="favorites-title">收藏{% if favorites %} <span class="favorites-count">{{ favorites|length }}</span>{% endif %}</h1>
 
@@ -29,6 +30,7 @@
                     {% endif %}
                 </div>
                 <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-remove-form">
+                    <input type="hidden" name="csrf_token" value="{{ account_csrf_token }}">
                     <input type="hidden" name="entry_id" value="{{ fav.entry_id }}">
                     <button type="submit" class="btn btn-sm btn-outline-secondary">移除</button>
                 </form>
@@ -59,6 +61,7 @@
                         </div>
                     </div>
                     <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-add-form">
+                        <input type="hidden" name="csrf_token" value="{{ account_csrf_token }}">
                         <input type="hidden" name="entry_id" value="{{ item.entry_id }}">
                         <button type="submit" class="btn btn-sm btn-outline-secondary">☆ 收藏</button>
                     </form>
@@ -74,13 +77,17 @@
 {% block extra_js %}
 <script>
 function favoriteToggle(form) {
+    var status = document.getElementById('favorites-status');
     var body = new URLSearchParams(new FormData(form));
     fetch('/api/favorites', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: body.toString()
-    }).then(function() {
+    }).then(function(response) {
+        if (!response.ok) throw new Error('favorite request failed');
         window.location.reload();
+    }).catch(function() {
+        if (status) status.textContent = '保存收藏失败，请稍后重试。';
     });
 }
 document.querySelectorAll('.favorite-remove-form, .favorite-add-form').forEach(function(form) {

@@ -151,6 +151,21 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             return url_for("views.index")
         return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
+    def account_csrf_token():
+        """Return the per-session token used by authenticated browser actions."""
+        token = session.get("account_csrf")
+        if not token:
+            token = secrets.token_urlsafe(24)
+            session["account_csrf"] = token
+        return token
+
+    def valid_account_csrf():
+        supplied = request.form.get("csrf_token", request.headers.get("X-CSRF-Token", ""))
+        expected = session.get("account_csrf", "")
+        return bool(expected) and hmac.compare_digest(
+            supplied.encode(), expected.encode()
+        )
+
     def session_is_admin():
         """Admin = account email listed in ADMIN_EMAILS."""
         if not session.get("beta_authenticated"):
@@ -196,7 +211,11 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.after_request
     def protect_login_tokens(response):
-        if request.path == "/login":
+        sensitive_paths = {"/login", "/account", "/favorites", "/admin", "/account/email-change"}
+        if request.path in sensitive_paths or (
+            session.get("access_grant_id") is not None
+            and request.path.startswith(("/api/favorites", "/api/notes"))
+        ):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
@@ -306,10 +325,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             session.clear()
             return redirect(url_for("login"))
 
-        csrf_token = session.get("account_csrf")
-        if not csrf_token:
-            csrf_token = secrets.token_urlsafe(24)
-            session["account_csrf"] = csrf_token
+        csrf_token = account_csrf_token()
 
         email = grant
         error = None
@@ -532,27 +548,26 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 })
         return favorites
 
-    @app.route('/account/email-change')
+    @app.route('/account/email-change', methods=['GET', 'POST'])
     def email_change_confirm():
-        token = request.args.get("token", "")
-        if not token or not app.config['ACCESS_DATABASE_PATH']:
-            return redirect(url_for("views.index"))
+        csrf_token = session.get("email_change_csrf")
+        if not csrf_token:
+            csrf_token = secrets.token_urlsafe(24)
+            session["email_change_csrf"] = csrf_token
+        if request.method == 'GET':
+            return render_template('email_change.html', csrf_token=csrf_token)
+        if not app.config['ACCESS_DATABASE_PATH'] or not hmac.compare_digest(
+            request.form.get("csrf_token", "").encode(), csrf_token.encode()
+        ):
+            return render_template('email_change.html', csrf_token=csrf_token, error=True), 400
         new_email = consume_email_change(
             app.config['ACCESS_DATABASE_PATH'],
             app.config['ACCESS_CODE_SECRET'],
-            token,
+            request.form.get("token", ""),
         )
         if new_email is None:
-            return render_template(
-                'login.html',
-                error=None,
-                submitted=False,
-                next_url="",
-                csrf_token="",
-                magic_login_enabled=magic_login_enabled,
-                turnstile_site_key=app.config['TURNSTILE_SITE_KEY'],
-                email_change_failed=True,
-            ), 200
+            return render_template('email_change.html', csrf_token=csrf_token, error=True), 400
+        session.pop("email_change_csrf", None)
         return redirect(url_for("account"))
 
     @app.route('/admin', methods=['GET', 'POST'])
@@ -561,10 +576,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         if not (app.config['ACCESS_DATABASE_PATH'] and session_is_admin()):
             return redirect(url_for("views.index"))
 
-        csrf_token = session.get("account_csrf")
-        if not csrf_token:
-            csrf_token = secrets.token_urlsafe(24)
-            session["account_csrf"] = csrf_token
+        csrf_token = account_csrf_token()
 
         error = None
         message = None
@@ -643,6 +655,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.post('/logout')
     def logout():
+        if not valid_account_csrf():
+            return jsonify({"error": "Invalid CSRF token"}), 400
         session.clear()
         return redirect(url_for("login"))
 
@@ -666,6 +680,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "individual_account": session.get("access_grant_id") is not None,
             "operator_session": session_is_admin(),
             "magic_login_enabled": magic_login_enabled,
+            "account_csrf_token": account_csrf_token()
+            if session.get("access_grant_id") is not None else "",
         }
 
     @app.route('/health')
@@ -703,6 +719,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         grant_id = session.get("access_grant_id")
         if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
             return jsonify({"error": "Authentication required"}), 401
+        if not valid_account_csrf():
+            return jsonify({"error": "Invalid CSRF token"}), 400
         try:
             entry_id = int(request.form.get("entry_id", ""))
         except ValueError:
@@ -764,6 +782,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         grant_id = _current_grant_or_401()
         if grant_id is None:
             return jsonify({"error": "Authentication required"}), 401
+        if not valid_account_csrf():
+            return jsonify({"error": "Invalid CSRF token"}), 400
         try:
             entry_id = int(request.form.get("entry_id", ""))
         except ValueError:
@@ -787,6 +807,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         grant_id = _current_grant_or_401()
         if grant_id is None:
             return jsonify({"error": "Authentication required"}), 401
+        if not valid_account_csrf():
+            return jsonify({"error": "Invalid CSRF token"}), 400
         if request.method == 'DELETE':
             if delete_entry_note(
                 app.config['ACCESS_DATABASE_PATH'], grant_id, note_id

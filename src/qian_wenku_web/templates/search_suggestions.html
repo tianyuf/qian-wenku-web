@@ -1,0 +1,7 @@
+<div class="list-group list-group-flush" role="listbox">
+{% for suggestion in suggestions %}
+<a href="#" id="search-suggestion-{{ loop.index0 }}"
+   class="list-group-item list-group-item-action py-1 small"
+   role="option" aria-selected="false" data-search-value="{{ suggestion }}">{{ suggestion }}</a>
+{% endfor %}
+</div>

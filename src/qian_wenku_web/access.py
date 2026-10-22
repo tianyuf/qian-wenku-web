@@ -973,7 +973,10 @@ def send_email_change_link(
     base_url: str,
 ) -> None:
     """Send the confirmation link for an email change to the new address."""
-    confirm_url = f"{base_url.rstrip('/')}/account/email-change?token={token}"
+    # Keep bearer tokens out of HTTP request URLs and server logs. The
+    # confirmation page reads this fragment and submits it with a CSRF-protected
+    # POST request, mirroring the login-link flow.
+    confirm_url = f"{base_url.rstrip('/')}/account/email-change#token={token}"
     safe_url = html.escape(confirm_url, quote=True)
     _send_email(
         api_key,
