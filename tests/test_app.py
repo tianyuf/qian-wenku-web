@@ -41,6 +41,22 @@ def test_representative_html_routes(client):
         assert response.content_type.startswith("text/html")
 
 
+def test_entry_page_initialises_pdf_viewer_state_in_script(client):
+    """Regression: the viewer state used to be set in an onload="..." attribute.
+
+    |tojson emits double quotes, so the attribute was cut short, the inline
+    handler was a syntax error, and the PDF prev/next buttons stayed disabled.
+    """
+    page = client.get("/e/nianpu-19111211-a").get_data(as_text=True)
+    assert 'onload="window.pdfState' not in page
+    assert "sourceId: 1," in page
+    assert "currentPage: 1," in page
+    assert "totalPages: 3," in page
+    # The title must be JSON inside a <script> block, never inside an attribute.
+    script_start = page.index("window.pdfState = {\n")
+    assert 'title: "' in page[script_start:script_start + 400]
+
+
 def test_permalink_redirect_does_not_modify_database(client, artifact_dir):
     db_path = artifact_dir / "corpus.db"
     before = hashlib.sha256(db_path.read_bytes()).hexdigest()

@@ -299,8 +299,7 @@
     <div class="pdf-viewer" id="pdf-viewer">
         {% if entry.pdf_path %}
         <img src="{{ url_for('pdf.get_page_image', source_id=entry.source_id, page_num=entry.pdf_start_page) }}"
-             alt="第 {{ entry.pdf_start_page }} 页扫描影像"
-             onload="window.pdfState = {sourceId: {{ entry.source_id }}, currentPage: {{ entry.pdf_start_page }}, totalPages: {{ entry.total_pages or 0 }}, title: {{ entry.source_title|tojson }} }; updatePDFButtons();">
+             alt="第 {{ entry.pdf_start_page }} 页扫描影像">
         {% else %}
         <div class="pdf-placeholder">
             <p class="placeholder-title">PDF 不可用</p>
@@ -493,16 +492,32 @@ function toggleFavorite(btn) {
         btn.classList.toggle('btn-primary', fav);
         btn.classList.toggle('btn-outline-secondary', !fav);
     }).catch(function() {
-        // keep prior state on failure
+        if (status) status.textContent = '收藏保存失败，请稍后重试。';
     }).finally(function() {
         btn.disabled = false;
     });
 }
-// Only reload PDF if not already loaded server-side
+// Viewer state comes from the server-rendered entry, not from the image's
+// load event, so paging works even if the first scan is slow or fails.
+// (|tojson output contains double quotes, so it must live in a <script>
+// block, never inside a double-quoted HTML attribute.)
 (function() {
+    {% if entry.pdf_path %}
+    window.pdfState = {
+        sourceId: {{ entry.source_id }},
+        currentPage: {{ entry.pdf_start_page }},
+        totalPages: {{ entry.total_pages or 0 }},
+        title: {{ entry.source_title|tojson }}
+    };
+    {% endif %}
     var img = document.querySelector('#pdf-viewer img');
     if (img) {
-        window.pdfState = window.pdfState || {};
+        var showLoadError = function() {
+            var viewer = document.getElementById('pdf-viewer');
+            if (viewer) viewer.innerHTML = '<div class="pdf-placeholder"><p>PDF 页面无法载入</p></div>';
+        };
+        if (img.complete && img.naturalWidth === 0) showLoadError();
+        else img.addEventListener('error', showLoadError);
         updatePDFButtons();
     } else {
         ensureMapping(updatePDFViewer);
