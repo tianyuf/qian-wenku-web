@@ -2,7 +2,13 @@
 
 from flask import Blueprint, request, jsonify, current_app
 
-from ..formatting import clamp_int, format_date_chinese, parse_page_numbers
+from ..formatting import (
+    clamp_int,
+    clamp_term,
+    format_date_chinese,
+    like_contains,
+    parse_page_numbers,
+)
 from .utils import open_db
 
 search_bp = Blueprint('search', __name__)
@@ -67,8 +73,8 @@ def search():
     - limit: max results (default 100)
     - offset: pagination offset
     """
-    query = request.args.get('q', '').strip()
-    person = request.args.get('person', '').strip()
+    query = clamp_term(request.args.get('q'))
+    person = clamp_term(request.args.get('person'))
     year_start = request.args.get('year_start', type=int)
     year_end = request.args.get('year_end', type=int)
     source_ids = request.args.getlist('source_id', type=int)
@@ -84,13 +90,13 @@ def search():
         # Substring search is intentional for Chinese text: SQLite's default
         # FTS tokenizer has poor recall for unsegmented Chinese terms.
         if query:
-            where_clauses.append("e.content_clean LIKE ?")
-            params.append(f"%{query}%")
+            where_clauses.append("e.content_clean LIKE ? ESCAPE '\\'")
+            params.append(like_contains(query))
 
         # Person filter (match against source title)
         if person:
-            where_clauses.append("s.title LIKE ?")
-            params.append(f"%{person}%")
+            where_clauses.append("s.title LIKE ? ESCAPE '\\'")
+            params.append(like_contains(person))
 
         # Year range
         if year_start:
@@ -165,7 +171,7 @@ def search():
 @search_bp.route('/suggest')
 def suggest():
     """Search suggestions for autocomplete."""
-    query = request.args.get('q', '').strip()
+    query = clamp_term(request.args.get('q'))
     if not query or len(query) < 2:
         return jsonify({"suggestions": []})
 
@@ -175,10 +181,10 @@ def suggest():
             sql = """
             SELECT DISTINCT substr(content_clean, instr(content_clean, ?), 20) as term
             FROM entries
-            WHERE content_clean LIKE ?
+            WHERE content_clean LIKE ? ESCAPE '\\'
             LIMIT 10
             """
-            cursor = db.conn.execute(sql, [query, f"%{query}%"])
+            cursor = db.conn.execute(sql, [query, like_contains(query)])
             suggestions = [row[0] for row in cursor.fetchall()]
         return jsonify({"suggestions": suggestions})
 

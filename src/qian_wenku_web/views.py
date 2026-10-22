@@ -10,7 +10,13 @@ from flask import Blueprint, render_template, request, current_app, url_for, red
 from markupsafe import escape, Markup
 
 from .database import NianpuDatabase
-from .formatting import add_pdf_page_fields, clamp_int, format_date_chinese
+from .formatting import (
+    add_pdf_page_fields,
+    clamp_int,
+    clamp_term,
+    format_date_chinese,
+    like_contains,
+)
 
 views_bp = Blueprint('views', __name__, template_folder='templates')
 
@@ -138,15 +144,21 @@ def build_search_query(query=None, person=None, year_start=None, year_end=None, 
 
     if query:
         # Search across content_clean, title, and footnotes
-        where_clauses.append("(e.content_clean LIKE ? OR e.title LIKE ? OR e.footnotes LIKE ?)")
-        params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+        where_clauses.append(
+            "(e.content_clean LIKE ? ESCAPE '\\' OR e.title LIKE ? ESCAPE '\\' "
+            "OR e.footnotes LIKE ? ESCAPE '\\')"
+        )
+        params.extend([like_contains(query)] * 3)
     if extra_query:
         # Additional narrowing query (AND with main query)
-        where_clauses.append("(e.content_clean LIKE ? OR e.title LIKE ? OR e.footnotes LIKE ?)")
-        params.extend([f"%{extra_query}%", f"%{extra_query}%", f"%{extra_query}%"])
+        where_clauses.append(
+            "(e.content_clean LIKE ? ESCAPE '\\' OR e.title LIKE ? ESCAPE '\\' "
+            "OR e.footnotes LIKE ? ESCAPE '\\')"
+        )
+        params.extend([like_contains(extra_query)] * 3)
     if person:
-        where_clauses.append("s.title LIKE ?")
-        params.append(f"%{person}%")
+        where_clauses.append("s.title LIKE ? ESCAPE '\\'")
+        params.append(like_contains(person))
     if year_start:
         where_clauses.append("e.year >= ?")
         params.append(year_start)
@@ -289,13 +301,13 @@ def get_filter_data():
 @views_bp.route('/')
 def index():
     """Main search page."""
-    query = request.args.get('q', '').strip()
-    person = request.args.get('person', '').strip()
+    query = clamp_term(request.args.get('q'))
+    person = clamp_term(request.args.get('person'))
     year_start = request.args.get('year_start', type=int)
     year_end = request.args.get('year_end', type=int)
     source_ids = request.args.getlist('source_id', type=int)
     content_type = request.args.get('content_type', '').strip()
-    extra_query = request.args.get('q2', '').strip()
+    extra_query = clamp_term(request.args.get('q2'))
     limit = clamp_int(request.args.get('limit'), 20, 1, 200)
     offset = clamp_int(request.args.get('offset'), 0, 0, 1_000_000)
 
@@ -337,13 +349,13 @@ def index():
 @views_bp.route('/search/results')
 def search_results():
     """HTMX partial for search results; renders the full page for direct visits."""
-    query = request.args.get('q', '').strip()
-    person = request.args.get('person', '').strip()
+    query = clamp_term(request.args.get('q'))
+    person = clamp_term(request.args.get('person'))
     year_start = request.args.get('year_start', type=int)
     year_end = request.args.get('year_end', type=int)
     source_ids = request.args.getlist('source_id', type=int)
     content_type = request.args.get('content_type', '').strip()
-    extra_query = request.args.get('q2', '').strip()
+    extra_query = clamp_term(request.args.get('q2'))
     limit = clamp_int(request.args.get('limit'), 20, 1, 200)
     offset = clamp_int(request.args.get('offset'), 0, 0, 1_000_000)
 
@@ -381,7 +393,7 @@ def search_results():
 @views_bp.route('/search/suggest')
 def search_suggest():
     """Search autocomplete suggestions."""
-    query = request.args.get('q', '').strip()
+    query = clamp_term(request.args.get('q'))
     if not query:
         return ''
 
@@ -389,9 +401,9 @@ def search_suggest():
         # Find entries containing the query and extract meaningful phrases
         cursor = db.conn.execute("""
             SELECT content_clean FROM entries
-            WHERE content_clean LIKE ?
+            WHERE content_clean LIKE ? ESCAPE '\\'
             LIMIT 20
-        """, [f"%{query}%"])
+        """, [like_contains(query)])
 
         # Extract unique short phrases containing the query
         seen = set()
@@ -938,7 +950,7 @@ def _render_entry_detail(entry_id):
 @views_bp.route('/browse/recipients')
 def browse_recipients():
     """Recipient directory: list all recipients with letter counts."""
-    query = request.args.get('q', '').strip()
+    query = clamp_term(request.args.get('q'))
     sort = request.args.get('sort', 'count')
     limit = clamp_int(request.args.get('limit'), 50, 1, 200)
     offset = clamp_int(request.args.get('offset'), 0, 0, 1_000_000)
@@ -1247,7 +1259,7 @@ def browse_date(date_iso):
 @views_bp.route('/browse/entities')
 def browse_entities():
     """Entity directory: persons and organizations."""
-    query = request.args.get('q', '').strip()
+    query = clamp_term(request.args.get('q'))
     entity_type = request.args.get('type', '').strip()  # person, organization, or '' for all
     sort = request.args.get('sort', 'total')
     limit = clamp_int(request.args.get('limit'), 50, 1, 200)

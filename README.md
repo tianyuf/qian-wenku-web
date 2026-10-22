@@ -111,7 +111,8 @@ All configuration is via environment variables (not loaded from `.env` files by 
 Checked-in examples for the production deployment at `https://wenku.qianxuesen.org/`:
 
 - `deploy/systemd/qian-wenku-web.service` — gunicorn service
-- `deploy/nginx/wenku.qianxuesen.org.conf` — site config
+- `deploy/nginx/wenku.qianxuesen.org.conf` — site config (per-client rate limits on login, account, search, API, and MCP)
+- `deploy/nginx/cloudflare-real-ip.conf` — install in `/etc/nginx/conf.d/`; restores real client addresses behind Cloudflare so those rate limits key on clients, not edge nodes. Refresh the ranges from <https://www.cloudflare.com/ips-v4> and <https://www.cloudflare.com/ips-v6> periodically.
 - `deploy/www/` — static landing page for `https://www.qianxuesen.org/`
 
 Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.

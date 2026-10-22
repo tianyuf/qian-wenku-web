@@ -3,6 +3,8 @@
 import sqlite3
 from pathlib import Path
 
+from .formatting import like_contains
+
 
 class NianpuDatabase:
     """Read-only connection and corpus queries needed by the web UI."""
@@ -44,8 +46,8 @@ class NianpuDatabase:
 
     def get_recipients(self, query=None, sort="count", limit=50, offset=0):
         order = "letter_count DESC, name" if sort == "count" else "name"
-        where = "WHERE name LIKE ?" if query else ""
-        params = [f"%{query}%"] if query else []
+        where = "WHERE name LIKE ? ESCAPE '\\'" if query else ""
+        params = [like_contains(query)] if query else []
         rows = self.conn.execute(
             f"SELECT * FROM recipients {where} ORDER BY {order} LIMIT ? OFFSET ?",
             params + [limit, offset],
@@ -116,8 +118,8 @@ class NianpuDatabase:
             clauses.append("type = ?")
             params.append(entity_type)
         if query:
-            clauses.append("name LIKE ?")
-            params.append(f"%{query}%")
+            clauses.append("name LIKE ? ESCAPE '\\'")
+            params.append(like_contains(query))
         where = " AND ".join(clauses) if clauses else "1=1"
         orders = {
             "nianpu": "nianpu_count DESC, name",

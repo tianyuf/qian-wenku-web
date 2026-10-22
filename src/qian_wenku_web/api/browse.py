@@ -2,7 +2,13 @@
 
 from flask import Blueprint, request, jsonify, current_app
 
-from ..formatting import clamp_int, format_date_chinese, parse_page_numbers
+from ..formatting import (
+    clamp_int,
+    clamp_term,
+    format_date_chinese,
+    like_contains,
+    parse_page_numbers,
+)
 from .utils import open_db
 
 browse_bp = Blueprint("browse", __name__)
@@ -11,7 +17,7 @@ browse_bp = Blueprint("browse", __name__)
 @browse_bp.route("/years")
 def list_years():
     """List all years with entry counts."""
-    person = request.args.get("person", "").strip()
+    person = clamp_term(request.args.get("person"))
 
     try:
         with open_db() as db:
@@ -24,8 +30,8 @@ def list_years():
             params = []
 
             if person:
-                sql += " AND s.title LIKE ?"
-                params.append(f"%{person}%")
+                sql += " AND s.title LIKE ? ESCAPE '\\'"
+                params.append(like_contains(person))
 
             sql += " GROUP BY e.year ORDER BY e.year"
             cursor = db.conn.execute(sql, params)
@@ -49,7 +55,7 @@ def browse_year(year):
     - month: filter by month (1-12)
     - limit: max entries (default 1000)
     """
-    person = request.args.get("person", "").strip()
+    person = clamp_term(request.args.get("person"))
     source_ids = request.args.getlist("source_id", type=int)
     month = request.args.get("month", type=int)
     limit = clamp_int(request.args.get("limit"), 500, 1, 500)
@@ -65,8 +71,8 @@ def browse_year(year):
             params = [year]
 
             if person:
-                sql += " AND s.title LIKE ?"
-                params.append(f"%{person}%")
+                sql += " AND s.title LIKE ? ESCAPE '\\'"
+                params.append(like_contains(person))
 
             if source_ids:
                 placeholders = ",".join("?" * len(source_ids))

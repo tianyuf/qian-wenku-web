@@ -944,3 +944,32 @@ def test_favorites_annotations_section(artifact_dir, tmp_path, monkeypatch):
     assert 'value="2"' in page
     # Favorited entry does not duplicate in the annotations section.
     assert 'value="1"' in page  # in favorites remove form only
+
+
+def test_search_terms_are_literal_and_length_capped(client):
+    from qian_wenku_web.formatting import MAX_SEARCH_TERM, like_contains
+
+    # Wildcards and the escape character are neutralised.
+    assert like_contains("50%_a\\b") == "%50\\%\\_a\\\\b%"
+
+    # A bare "%" used to match every entry; now it matches only literal "%".
+    wildcard = client.get("/api/search/?q=%25")
+    assert wildcard.status_code == 200
+    assert wildcard.get_json()["total"] == 0
+    underscore = client.get("/api/search/?q=_")
+    assert underscore.get_json()["total"] == 0
+
+    # Normal substring search still works through the escaped pattern.
+    assert client.get("/api/search/?q=合成").get_json()["total"] >= 1
+    assert "合成" in client.get("/?q=合成").get_data(as_text=True)
+
+    # Oversized terms are truncated instead of hitting SQLite's LIKE pattern
+    # limit (which surfaced as a 500).
+    huge = "合" * 100_000
+    assert client.get("/", query_string={"q": huge}).status_code == 200
+    assert client.get("/api/search/", query_string={"q": huge}).status_code == 200
+    assert client.get("/search/suggest", query_string={"q": huge}).status_code == 200
+    assert client.get("/browse/recipients", query_string={"q": huge}).status_code == 200
+    assert client.get("/browse/entities", query_string={"q": huge}).status_code == 200
+    assert client.get("/api/browse/years", query_string={"person": huge}).status_code == 200
+    assert len(huge[:MAX_SEARCH_TERM]) == MAX_SEARCH_TERM

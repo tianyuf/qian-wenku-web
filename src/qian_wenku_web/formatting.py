@@ -1,5 +1,28 @@
 """Small presentation and request-bound helpers shared by HTML and APIs."""
 
+# Longest free-text search term accepted from a request. Anything longer is
+# truncated: SQLite rejects LIKE patterns over ~50k bytes with an error, and
+# every extra byte widens a full-table scan for no benefit to the reader.
+MAX_SEARCH_TERM = 200
+
+
+def clamp_term(value, maximum=MAX_SEARCH_TERM):
+    """Return a stripped, length-capped free-text search term."""
+    return (value or "").strip()[:maximum]
+
+
+def like_contains(term):
+    """Return a LIKE pattern that matches `term` literally anywhere in a column.
+
+    `%`, `_` and the escape character itself are escaped so user input cannot
+    act as a wildcard (``q=%`` must not match every row). Pair the result with
+    ``LIKE ? ESCAPE '\\'`` in the SQL text.
+    """
+    escaped = (
+        term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
 
 def clamp_int(value, default, minimum, maximum):
     """Return an integer constrained to a safe inclusive range."""
