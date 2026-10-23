@@ -104,6 +104,7 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | `/e/<permalink>` | Canonical entry page |
 | `/browse/recipients`, `/browse/entities` | Relationship directories |
 | `/api/search/`, `/api/browse/`, `/api/meta/`, `/api/pdf/` | JSON APIs |
+| `/api/pdf/entry/<id>.pdf` | Download an entry's original scanned pages as one PDF (assembled from the CDN page images) |
 | `/health` | Lightweight process and database health check |
 
 ### Deployment

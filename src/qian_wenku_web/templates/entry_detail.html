@@ -219,18 +219,25 @@
                 第 {{ entry.start_page }} 页
             {% endif %}
         </span>
-        {% if individual_account %}
-        <button class="btn btn-sm {% if favorited %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                id="favorite-btn" data-entry-id="{{ entry.id }}"
-                data-favorited="{{ '1' if favorited else '0' }}"
-                onclick="toggleFavorite(this)">
-            {{ '★ 已收藏' if favorited else '☆ 收藏' }}
-        </button>
-        {% endif %}
-        <button class="btn btn-sm btn-outline-secondary"
-                onclick='copyCitation({{ entry.citation|tojson }}, this)'>
-            复制引用
-        </button>
+        <div class="entry-pageinfo-actions">
+            {% if individual_account %}
+            <button class="btn btn-sm {% if favorited %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                    id="favorite-btn" data-entry-id="{{ entry.id }}"
+                    data-favorited="{{ '1' if favorited else '0' }}"
+                    onclick="toggleFavorite(this)">
+                {{ '★ 已收藏' if favorited else '☆ 收藏' }}
+            </button>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-secondary"
+                    onclick='copyCitation({{ entry.citation|tojson }}, this)'>
+                复制引用
+            </button>
+            {% if entry.pdf_path %}
+            <a class="btn btn-sm btn-outline-secondary" id="entry-pdf-download"
+               href="{{ url_for('pdf.entry_pdf', entry_id=entry.id) }}" download
+               title="下载本条目的原文扫描页（PDF）">下载原文 PDF</a>
+            {% endif %}
+        </div>
     </div>
 
     <div class="citation-box">

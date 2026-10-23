@@ -1551,6 +1551,12 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     font-size: 0.85rem;
     color: var(--muted);
 }
+.entry-pageinfo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
 
 /* Entities-mentioned strip (moved from inline styles) */
 .entities-strip {
