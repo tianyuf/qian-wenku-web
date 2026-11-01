@@ -61,6 +61,11 @@ class WenkuClient:
         *,
         user_authorization: str = "",
     ) -> dict[str, Any]:
+        # Forward the hosted caller's token so the web app can record the
+        # token's activity; the service token still carries authentication.
+        user_authorization = user_authorization or (
+            f"Bearer {_caller_token.get()}" if _caller_token.get() else ""
+        )
         headers = (
             {"X-User-Authorization": user_authorization} if user_authorization else {}
         )

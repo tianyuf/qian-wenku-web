@@ -104,6 +104,27 @@
             {% endif %}
         </section>
 
+        <section class="account-section" aria-labelledby="data-title">
+            <h2 id="data-title">我的数据</h2>
+            <p class="text-muted small">下载您的全部收藏与批注（JSON 格式，含条目链接与出处）。</p>
+            <a class="btn btn-outline-secondary" href="{{ url_for('account_export') }}">导出收藏与批注</a>
+        </section>
+
+        <section class="account-section account-danger" aria-labelledby="delete-title">
+            <h2 id="delete-title">删除账户</h2>
+            <p class="text-muted small">删除后，您的收藏、批注与 MCP 令牌将被永久清除，无法恢复。如需保留，请先导出数据。</p>
+            <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="delete_account">
+                <div class="filter-group">
+                    <label for="confirm-email">输入登录邮箱以确认</label>
+                    <input class="form-control" id="confirm-email" name="confirm_email" type="email" required autocomplete="off" placeholder="{{ account_email }}">
+                </div>
+                <button type="submit" class="btn btn-outline-danger"
+                        onclick="return confirm('确定永久删除账户及全部数据吗？此操作无法撤销。')">永久删除账户</button>
+            </form>
+        </section>
+
         <form method="post" action="{{ url_for('logout') }}" class="account-logout">
             <input type="hidden" name="csrf_token" value="{{ account_csrf_token }}">
             <button type="submit" class="btn btn-outline-secondary">退出登录</button>

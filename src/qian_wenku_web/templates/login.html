@@ -15,6 +15,7 @@
         <p class="login-description access-success">登录链接已发送至您的邮箱。链接仅可使用一次，并将在 15 分钟后失效。</p>
         <a class="btn btn-primary w-100" href="{{ url_for('login', next=next_url) }}">重新发送</a>
         {% elif magic_login_enabled %}
+        {% if account_deleted %}<div class="account-success" role="status">账户已删除，相关收藏与批注已一并清除。</div>{% endif %}
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         <div id="magic-link-confirm" hidden>
             <p class="login-description">确认在此浏览器中登录 qianxuesen.org。</p>

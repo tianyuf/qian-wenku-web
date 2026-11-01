@@ -973,3 +973,253 @@ def test_search_terms_are_literal_and_length_capped(client):
     assert client.get("/browse/entities", query_string={"q": huge}).status_code == 200
     assert client.get("/api/browse/years", query_string={"person": huge}).status_code == 200
     assert len(huge[:MAX_SEARCH_TERM]) == MAX_SEARCH_TERM
+
+
+def _account_app(artifact_dir, tmp_path, monkeypatch, **extra_env):
+    """App with the individual-account store enabled and one seeded reader."""
+    access_db = tmp_path / "access.db"
+    monkeypatch.delenv("BETA_PASSPHRASE", raising=False)
+    monkeypatch.setenv("ACCESS_DATABASE_PATH", str(access_db))
+    monkeypatch.setenv("ACCESS_CODE_SECRET", "fixture-access-secret")
+    monkeypatch.setenv("RESEND_API_KEY", "fixture-resend-key")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "fixture-site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "fixture-turnstile-secret")
+    monkeypatch.setenv("TURNSTILE_HOSTNAMES", "localhost")
+    monkeypatch.setenv("ACCESS_FROM_EMAIL", "Archive <access@example.com>")
+    monkeypatch.setenv("SECRET_KEY", "fixture-secret-key")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    for key, value in extra_env.items():
+        monkeypatch.setenv(key, value)
+    app = create_app(
+        db_path=artifact_dir / "corpus.db",
+        mapping_path=artifact_dir / "page_images.json",
+        manifest_path=artifact_dir / "manifest.json",
+    )
+    app.config.update(TESTING=True)
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES ('Reader@example.com', 'seed', '2026-09', strftime('%s','now'))"
+        )
+    return app, access_db
+
+
+def _login_as(client, grant_id):
+    with client.session_transaction() as session:
+        session["beta_authenticated"] = True
+        session["access_grant_id"] = grant_id
+        session.permanent = True
+        session["account_csrf"] = "fixture-csrf"
+
+
+def test_browser_activity_updates_last_active(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(artifact_dir, tmp_path, monkeypatch)
+    client = app.test_client()
+    _login_as(client, 1)
+
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT last_used_at FROM access_grants WHERE id = 1"
+        ).fetchone()[0] is None
+
+    assert client.get("/").status_code == 200
+    with sqlite3.connect(access_db) as connection:
+        first = connection.execute(
+            "SELECT last_used_at FROM access_grants WHERE id = 1"
+        ).fetchone()[0]
+    assert first is not None
+
+    # Within the hourly window the timestamp is left alone.
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "UPDATE access_grants SET last_used_at = ? WHERE id = 1", (first - 60,)
+        )
+    assert client.get("/").status_code == 200
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute(
+            "SELECT last_used_at FROM access_grants WHERE id = 1"
+        ).fetchone()[0] == first - 60
+
+
+def test_mcp_token_use_updates_last_active(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(
+        artifact_dir, tmp_path, monkeypatch, WENKU_SERVICE_TOKEN="fixture-service-token"
+    )
+    client = app.test_client()
+    from qian_wenku_web.access import create_mcp_token
+    token_id, mcp_token = create_mcp_token(
+        str(access_db), "fixture-access-secret", 1, "Claude Desktop"
+    )
+
+    # A hosted-MCP search call forwards the caller's token alongside the
+    # service token; that counts as activity for the token and the account.
+    response = client.get(
+        "/api/search/?q=钱",
+        headers={
+            "X-Service-Token": "fixture-service-token",
+            "X-User-Authorization": f"Bearer {mcp_token}",
+        },
+    )
+    assert response.status_code == 200
+    with sqlite3.connect(access_db) as connection:
+        token_used, account_used = connection.execute(
+            """
+            SELECT mcp_tokens.last_used_at, access_grants.last_used_at
+            FROM mcp_tokens JOIN access_grants ON access_grants.id = mcp_tokens.grant_id
+            WHERE mcp_tokens.id = ?
+            """,
+            (token_id,),
+        ).fetchone()
+    assert token_used is not None
+    assert account_used is not None
+
+    # A bogus forwarded token is ignored rather than failing the request.
+    response = client.get(
+        "/api/search/?q=钱",
+        headers={
+            "X-Service-Token": "fixture-service-token",
+            "X-User-Authorization": "Bearer qxmcp_nope",
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_account_export_and_delete(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(artifact_dir, tmp_path, monkeypatch)
+    client = app.test_client()
+    _login_as(client, 1)
+
+    assert client.post(
+        "/api/favorites", data={"entry_id": "1", "csrf_token": "fixture-csrf"}
+    ).get_json() == {"favorited": True}
+    note = client.post(
+        "/api/notes",
+        data={"entry_id": "1", "body": "重要段落", "quote": "引文", "csrf_token": "fixture-csrf"},
+    )
+    assert note.status_code in (200, 201)
+    from qian_wenku_web.access import create_mcp_token
+    create_mcp_token(str(access_db), "fixture-access-secret", 1, "Claude Desktop")
+
+    # Anonymous export is redirected away.
+    assert app.test_client().get("/account/export").status_code == 302
+
+    export = client.get("/account/export")
+    assert export.status_code == 200
+    assert export.mimetype == "application/json"
+    assert "attachment" in export.headers["Content-Disposition"]
+    assert export.headers["Cache-Control"] == "no-store"
+    payload = export.get_json()
+    assert payload["email"] == "Reader@example.com"
+    assert [fav["entry_id"] for fav in payload["favorites"]] == [1]
+    assert payload["favorites"][0]["entry"]["permalink"] == "nianpu-19111211-a"
+    assert payload["favorites"][0]["entry"]["url"].endswith("/e/nianpu-19111211-a")
+    assert payload["notes"][0]["body"] == "重要段落"
+    assert payload["notes"][0]["quote"] == "引文"
+    assert payload["notes"][0]["entry"]["source_title"]
+
+    account_text = client.get("/account").get_data(as_text=True)
+    assert "/account/export" in account_text
+    assert "删除账户" in account_text
+
+    # Deletion requires typing the account's own email.
+    wrong = client.post(
+        "/account",
+        data={"csrf_token": "fixture-csrf", "action": "delete_account", "confirm_email": "other@example.com"},
+    )
+    assert "请输入您的登录邮箱" in wrong.get_data(as_text=True)
+    with sqlite3.connect(access_db) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM access_grants").fetchone()[0] == 1
+
+    deleted = client.post(
+        "/account",
+        data={"csrf_token": "fixture-csrf", "action": "delete_account", "confirm_email": " reader@EXAMPLE.com "},
+    )
+    assert deleted.status_code == 302
+    assert deleted.headers["Location"].endswith("/login?deleted=1")
+    with sqlite3.connect(access_db) as connection:
+        for table in ("access_grants", "favorites", "entry_notes", "mcp_tokens"):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+
+    # The session is gone and the login page explains what happened.
+    assert client.get("/account").status_code == 302
+    assert "账户已删除" in client.get("/login?deleted=1").get_data(as_text=True)
+
+
+def test_admin_search_and_account_detail(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(
+        artifact_dir, tmp_path, monkeypatch, ADMIN_EMAILS="owner@example.com"
+    )
+    client = app.test_client()
+    with sqlite3.connect(access_db) as connection:
+        connection.executemany(
+            "INSERT INTO access_grants (email, code_hash, terms_version, requested_at) "
+            "VALUES (?, ?, ?, strftime('%s','now'))",
+            [
+                ("owner@example.com", b"h0", "2026-09"),
+                ("alice@university.edu", b"h1", "2026-09"),
+                ("bob_smith@example.com", b"h2", "2026-09"),
+            ],
+        )
+        admin_grant = connection.execute(
+            "SELECT id FROM access_grants WHERE email = 'owner@example.com'"
+        ).fetchone()[0]
+        alice_grant = connection.execute(
+            "SELECT id FROM access_grants WHERE email = 'alice@university.edu'"
+        ).fetchone()[0]
+    _login_as(client, admin_grant)
+
+    # Search matches literally, case-insensitively, and escapes wildcards.
+    listing = client.get("/admin?q=UNIVERSITY").get_data(as_text=True)
+    assert "alice@university.edu" in listing
+    assert "bob_smith@example.com" not in listing
+    assert "匹配「UNIVERSITY」" in listing
+    assert "bob_smith" in client.get("/admin?q=bob_smith").get_data(as_text=True)
+    assert "没有匹配的账户" in client.get("/admin?q=%25%25").get_data(as_text=True)
+    assert "没有匹配的账户" in client.get("/admin?q=b_b").get_data(as_text=True)
+    # The list links each account to its detail page and preserves the query.
+    assert f"/admin/accounts/{alice_grant}?q=UNIVERSITY" in listing
+    assert "最近活跃" in client.get("/admin").get_data(as_text=True)
+
+    # Seed activity for the detail page.
+    from qian_wenku_web.access import create_mcp_token, issue_magic_link
+    create_mcp_token(str(access_db), "fixture-access-secret", alice_grant, "Alice laptop")
+    issue_magic_link(
+        str(access_db), "fixture-access-secret", "alice@university.edu", "/",
+    )
+    with sqlite3.connect(access_db) as connection:
+        connection.execute(
+            "INSERT INTO favorites (grant_id, entry_id, created_at) VALUES (?, 1, 1)",
+            (alice_grant,),
+        )
+        connection.execute(
+            "INSERT INTO entry_notes (grant_id, entry_id, quote, body, created_at, updated_at) "
+            "VALUES (?, 1, '', 'n', 1, 1)",
+            (alice_grant,),
+        )
+
+    detail = client.get(f"/admin/accounts/{alice_grant}")
+    assert detail.status_code == 200
+    detail_text = detail.get_data(as_text=True)
+    assert "alice@university.edu" in detail_text
+    assert "Alice laptop" in detail_text
+    assert "收藏</dt>" in detail_text and "1 条" in detail_text
+    assert "未使用" in detail_text  # the magic link
+    # Note contents are not exposed to operators, only counts.
+    assert ">n<" not in detail_text
+    assert client.get("/admin/accounts/99999").status_code == 404
+
+    # Revoke from the detail page, then the page shows the revoked state.
+    with client.session_transaction() as session:
+        admin_csrf = session["account_csrf"]
+    revoked = client.post(
+        f"/admin/accounts/{alice_grant}",
+        data={"csrf_token": admin_csrf, "action": "revoke_account", "grant_id": alice_grant},
+    )
+    revoked_text = revoked.get_data(as_text=True)
+    assert "账户已撤销" in revoked_text
+    assert "恢复账户" in revoked_text
+
+    # Non-admins cannot reach the detail page.
+    reader = app.test_client()
+    _login_as(reader, 1)
+    assert reader.get(f"/admin/accounts/{alice_grant}").status_code == 302

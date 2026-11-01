@@ -15,13 +15,21 @@
         {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
         {% if message %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
 
+        <form method="get" class="admin-search" role="search">
+            <label class="visually-hidden" for="admin-search-input">按邮箱搜索</label>
+            <input class="form-control" id="admin-search-input" name="q" type="search" value="{{ query }}" placeholder="按邮箱搜索" maxlength="200">
+            <button type="submit" class="btn btn-outline-secondary">搜索</button>
+            {% if query %}<a class="btn btn-outline-secondary" href="{{ url_for('admin') }}">清除</a>{% endif %}
+        </form>
+        {% if query %}<p class="text-muted small">匹配「{{ query }}」的账户：{{ total }} 个。</p>{% endif %}
+
         <div class="admin-account-list">
             {% for account in accounts %}
             <div class="admin-account-row{% if account.revoked_at %} is-revoked{% endif %}">
                 <div class="admin-account-main">
-                    <strong>{{ account.email }}</strong>
+                    <strong><a class="link-plain" href="{{ url_for('admin_account', grant_id=account.id, q=query or None) }}">{{ account.email }}</a></strong>
                     <span>创建于 {{ account.created_date }} ·
-                        {% if account.last_used_date %}最近登录 {{ account.last_used_date }}{% else %}从未登录{% endif %} ·
+                        {% if account.last_used_date %}最近活跃 {{ account.last_used_date }}{% else %}从未登录{% endif %} ·
                         MCP 令牌 {{ account.active_token_count }}/{{ account.token_count }}</span>
                 </div>
                 <div class="admin-account-actions">
@@ -46,15 +54,15 @@
                 </div>
             </div>
             {% else %}
-            <p class="text-muted">暂无账户。</p>
+            <p class="text-muted">{% if query %}没有匹配的账户。{% else %}暂无账户。{% endif %}</p>
             {% endfor %}
         </div>
 
         {% if total > per_page %}
         <nav class="admin-pagination" aria-label="分页">
-            {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page-1) }}">上一页</a>{% endif %}
+            {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page-1, q=query or None) }}">上一页</a>{% endif %}
             <span>第 {{ page }} 页 / 共 {{ ((total - 1) // per_page) + 1 }} 页</span>
-            {% if page * per_page < total %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page+1) }}">下一页</a>{% endif %}
+            {% if page * per_page < total %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin', page=page+1, q=query or None) }}">下一页</a>{% endif %}
         </nav>
         {% endif %}
 

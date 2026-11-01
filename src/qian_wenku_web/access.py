@@ -316,6 +316,71 @@ def delete_magic_link(path: str, link_id: int) -> None:
         )
 
 
+ACTIVITY_TOUCH_INTERVAL = 3600
+
+
+def touch_access_grant(
+    path: str, grant_id: int, *, min_interval: int = ACTIVITY_TOUCH_INTERVAL
+) -> bool:
+    """Record browser activity on an account, at most once per interval.
+
+    Returns True when the timestamp was advanced.
+    """
+    now = int(time.time())
+    with sqlite3.connect(path, timeout=5) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE access_grants SET last_used_at = ?
+            WHERE id = ? AND revoked_at IS NULL
+              AND (last_used_at IS NULL OR last_used_at < ?)
+            """,
+            (now, grant_id, now - min_interval),
+        )
+    return cursor.rowcount == 1
+
+
+def touch_mcp_token(
+    path: str,
+    secret: str,
+    token: str,
+    *,
+    min_interval: int = ACTIVITY_TOUCH_INTERVAL,
+) -> bool:
+    """Record MCP token use (and account activity), at most once per interval.
+
+    The hosted MCP service only has read access to the store, so the web
+    app calls this when it serves a request made with a forwarded token.
+    """
+    if not token.startswith(("qx_", "qxmcp_")) or len(token) > 128:
+        return False
+    now = int(time.time())
+    digest = _code_hash(secret, token)
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT id, grant_id FROM mcp_tokens
+            WHERE token_hash = ? AND revoked_at IS NULL
+              AND (last_used_at IS NULL OR last_used_at < ?)
+            """,
+            (digest, now - min_interval),
+        ).fetchone()
+        if not row:
+            return False
+        connection.execute(
+            "UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?", (now, int(row[0]))
+        )
+        connection.execute(
+            """
+            UPDATE access_grants SET last_used_at = ?
+            WHERE id = ? AND revoked_at IS NULL
+              AND (last_used_at IS NULL OR last_used_at < ?)
+            """,
+            (now, int(row[1]), now - min_interval),
+        )
+    return True
+
+
 def is_access_grant_active(path: str, grant_id: int) -> bool:
     """Check whether a session's grant remains active."""
     with _read_only_connection(path) as connection:
@@ -768,24 +833,35 @@ def revoke_mcp_token(path: str, grant_id: int, token_id: int) -> bool:
     return cursor.rowcount == 1
 
 
+def _account_filter(query: str) -> tuple[str, list[object]]:
+    """Return a WHERE clause and params matching `query` literally in email."""
+    query = (query or "").strip()[:200]
+    if not query:
+        return "", []
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return "WHERE account.email LIKE ? ESCAPE '\\'", [f"%{escaped}%"]
+
+
 def list_all_accounts(
-    path: str, limit: int = 200, offset: int = 0
+    path: str, limit: int = 200, offset: int = 0, query: str = ""
 ) -> list[dict[str, object]]:
     """List accounts with activity and token counts for operator review."""
+    where, params = _account_filter(query)
     with _read_only_connection(path) as connection:
         rows = connection.execute(
-            """
+            f"""
             SELECT account.id, account.email, account.requested_at,
                    account.revoked_at, account.last_used_at,
                    COUNT(token.id) AS token_count,
                    SUM(token.revoked_at IS NULL) AS active_token_count
             FROM access_grants AS account
             LEFT JOIN mcp_tokens AS token ON token.grant_id = account.id
+            {where}
             GROUP BY account.id
             ORDER BY account.requested_at DESC, account.id DESC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            (*params, limit, offset),
         ).fetchall()
     accounts = []
     for row in rows:
@@ -801,12 +877,113 @@ def list_all_accounts(
     return accounts
 
 
-def count_all_accounts(path: str) -> int:
-    """Return the total number of accounts for pagination."""
+def count_all_accounts(path: str, query: str = "") -> int:
+    """Return the total number of accounts (matching `query`) for pagination."""
+    where, params = _account_filter(query)
     with _read_only_connection(path) as connection:
         return int(connection.execute(
-            "SELECT COUNT(*) FROM access_grants"
+            f"SELECT COUNT(*) FROM access_grants AS account {where}", params
         ).fetchone()[0])
+
+
+def get_account_detail(path: str, grant_id: int) -> dict[str, object] | None:
+    """Return one account with its activity, tokens, and usage counts."""
+    with _read_only_connection(path) as connection:
+        row = connection.execute(
+            """
+            SELECT id, email, requested_at, revoked_at, last_used_at,
+                   pending_email, terms_version
+            FROM access_grants WHERE id = ?
+            """,
+            (grant_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        favorite_count = int(connection.execute(
+            "SELECT COUNT(*) FROM favorites WHERE grant_id = ?", (grant_id,)
+        ).fetchone()[0])
+        note_count = int(connection.execute(
+            "SELECT COUNT(*) FROM entry_notes WHERE grant_id = ?", (grant_id,)
+        ).fetchone()[0])
+        token_rows = connection.execute(
+            """
+            SELECT id, name, token_hint, created_at, revoked_at, last_used_at
+            FROM mcp_tokens WHERE grant_id = ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (grant_id,),
+        ).fetchall()
+        link_rows = connection.execute(
+            """
+            SELECT purpose, created_at, expires_at, used_at
+            FROM magic_links WHERE grant_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10
+            """,
+            (grant_id,),
+        ).fetchall()
+    return {
+        "id": int(row[0]),
+        "email": str(row[1]),
+        "created_at": int(row[2]),
+        "revoked_at": int(row[3]) if row[3] is not None else None,
+        "last_used_at": int(row[4]) if row[4] is not None else None,
+        "pending_email": str(row[5]) if row[5] else None,
+        "terms_version": str(row[6] or ""),
+        "favorite_count": favorite_count,
+        "note_count": note_count,
+        "tokens": [
+            {
+                "id": int(token[0]),
+                "name": str(token[1]),
+                "hint": str(token[2]),
+                "created_at": int(token[3]),
+                "revoked_at": int(token[4]) if token[4] is not None else None,
+                "last_used_at": int(token[5]) if token[5] is not None else None,
+            }
+            for token in token_rows
+        ],
+        "magic_links": [
+            {
+                "purpose": str(link[0]),
+                "created_at": int(link[1]),
+                "expires_at": int(link[2]),
+                "used_at": int(link[3]) if link[3] is not None else None,
+            }
+            for link in link_rows
+        ],
+    }
+
+
+def delete_account(path: str, grant_id: int) -> bool:
+    """Permanently delete an account and everything attached to it.
+
+    Sibling grants sharing the same email (legacy duplicates) are treated
+    as the same account, matching how MCP tokens are listed and revoked.
+    """
+    with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT email FROM access_grants WHERE id = ?", (grant_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        grant_ids = [
+            int(sibling[0])
+            for sibling in connection.execute(
+                "SELECT id FROM access_grants WHERE email = ? COLLATE NOCASE",
+                (str(row[0]),),
+            ).fetchall()
+        ]
+        placeholders = ", ".join("?" for _ in grant_ids)
+        for table in ("entry_notes", "favorites", "mcp_tokens", "magic_links"):
+            connection.execute(
+                f"DELETE FROM {table} WHERE grant_id IN ({placeholders})", grant_ids
+            )
+        connection.execute(
+            f"DELETE FROM access_grants WHERE id IN ({placeholders})", grant_ids
+        )
+    return True
 
 
 def revoke_account(path: str, grant_id: int) -> bool:

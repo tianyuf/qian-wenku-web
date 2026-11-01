@@ -51,7 +51,7 @@ a.btn:focus {
     text-decoration: none;
 }
 
-a:visited {
+a:visited:not(.btn) {
     color: var(--accent);
 }
 
@@ -1607,4 +1607,44 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     .sidebar-right:focus-within {
         outline: none;
     }
+}
+
+/* Admin: search bar, detail page */
+.admin-search {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+}
+
+.admin-search .form-control {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-back {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+}
+
+.admin-detail-actions {
+    margin-bottom: 1.5rem;
+}
+
+.admin-links-table {
+    width: 100%;
+    margin-top: 0.5rem;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.admin-links-table th,
+.admin-links-table td {
+    padding: 0.4rem 0.5rem 0.4rem 0;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.admin-links-table th {
+    color: var(--muted);
+    font-weight: 500;
 }

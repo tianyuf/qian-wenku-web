@@ -99,7 +99,9 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | Route | Purpose |
 |---|---|
 | `/`, `/search/results` | Search UI and HTMX results |
-| `/login`, `/account` | Email magic-link login (open registration) and account management |
+| `/login`, `/account` | Email magic-link login (open registration) and account management (MCP tokens, email change, self-service export and deletion) |
+| `/account/export` | Download the signed-in account's favorites and notes as JSON |
+| `/admin`, `/admin/accounts/<id>` | Operator console (emails in `ADMIN_EMAILS`): search accounts by email, view one account's tokens, usage counts and recent login links, revoke or reinstate |
 | `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
 | `/e/<permalink>` | Canonical entry page |
 | `/browse/recipients`, `/browse/entities` | Relationship directories |

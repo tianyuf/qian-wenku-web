@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block meta_description %}管理员控制台{% endblock %}
+{% block title %}{{ account.email }} · 用户管理 · 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+
+{% block content %}
+<main class="admin-view" id="main">
+    <section class="admin-panel" aria-labelledby="admin-account-title">
+        <p class="admin-back"><a class="link-plain" href="{{ url_for('admin', q=query or None) }}">← 返回用户列表</a></p>
+        <span class="section-kicker">管理员</span>
+        <h1 id="admin-account-title">{{ account.email }}</h1>
+
+        {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+        {% if message %}<div class="account-success" role="status">{{ message }}</div>{% endif %}
+
+        <dl class="account-details">
+            <div>
+                <dt>状态</dt>
+                <dd>{% if account.revoked_at %}已撤销（{{ account.revoked_date }}）{% else %}正常{% endif %}</dd>
+            </div>
+            <div>
+                <dt>创建于</dt>
+                <dd>{{ account.created_date }}</dd>
+            </div>
+            <div>
+                <dt>最近活跃</dt>
+                <dd>{% if account.last_used_date %}{{ account.last_used_date }}{% else %}从未登录{% endif %}</dd>
+            </div>
+            {% if account.pending_email %}
+            <div>
+                <dt>待确认的新邮箱</dt>
+                <dd>{{ account.pending_email }}</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>收藏</dt>
+                <dd>{{ account.favorite_count }} 条</dd>
+            </div>
+            <div>
+                <dt>批注</dt>
+                <dd>{{ account.note_count }} 条</dd>
+            </div>
+            {% if account.terms_version %}
+            <div>
+                <dt>条款版本</dt>
+                <dd>{{ account.terms_version }}</dd>
+            </div>
+            {% endif %}
+        </dl>
+
+        <div class="admin-account-actions admin-detail-actions">
+            {% if account.revoked_at %}
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="reinstate_account">
+                <input type="hidden" name="grant_id" value="{{ account.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        onclick="return confirm('恢复后该邮箱可重新登录。确定继续吗？')">恢复账户</button>
+            </form>
+            {% else %}
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="revoke_account">
+                <input type="hidden" name="grant_id" value="{{ account.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('撤销后该用户将立即失去访问权限，其 MCP 令牌全部失效。确定继续吗？')">撤销账户</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <section class="account-section" aria-labelledby="admin-tokens-title">
+            <h2 id="admin-tokens-title">MCP 令牌</h2>
+            {% if account.tokens %}
+            <div class="mcp-token-list">
+                {% for token in account.tokens %}
+                <div class="mcp-token-row{% if token.revoked_at %} is-revoked{% endif %}">
+                    <div>
+                        <strong>{{ token.name }}</strong>
+                        <code>{{ token.hint }}</code>
+                        <span>创建于 {{ token.created_date }}{% if token.last_used_date %} · 最近使用 {{ token.last_used_date }}{% else %} · 从未使用{% endif %}</span>
+                    </div>
+                    {% if token.revoked_at %}<span class="mcp-token-status">已撤销</span>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted small">尚未创建令牌。</p>
+            {% endif %}
+        </section>
+
+        <section class="account-section" aria-labelledby="admin-links-title">
+            <h2 id="admin-links-title">最近登录链接</h2>
+            {% if account.magic_links %}
+            <table class="admin-links-table">
+                <thead>
+                    <tr><th scope="col">时间 (UTC)</th><th scope="col">用途</th><th scope="col">状态</th></tr>
+                </thead>
+                <tbody>
+                    {% for link in account.magic_links %}
+                    <tr>
+                        <td>{{ link.created_display }}</td>
+                        <td>{{ link.purpose_display }}</td>
+                        <td>{{ link.status }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted small">暂无记录。</p>
+            {% endif %}
+        </section>
+    </section>
+</main>
+{% endblock %}

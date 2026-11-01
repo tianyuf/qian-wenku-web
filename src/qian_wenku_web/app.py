@@ -3,14 +3,17 @@
 
 import os
 import logging
+import hashlib
 import hmac
 import secrets
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from flask import (
     Flask,
+    Response,
     jsonify,
     redirect,
     render_template,
@@ -22,6 +25,7 @@ from flask import (
 from .database import NianpuDatabase
 from .formatting import format_date_chinese
 from .access import (
+    ACTIVITY_TOUCH_INTERVAL,
     AccessRequestLimitError,
     EmailDeliveryError,
     add_entry_note,
@@ -31,9 +35,11 @@ from .access import (
     consume_email_change,
     cancel_email_change,
     create_mcp_token,
+    delete_account,
     delete_entry_note,
     delete_magic_link,
     get_access_grant,
+    get_account_detail,
     get_pending_email,
     initialize_access_database,
     initialize_favorites,
@@ -55,6 +61,8 @@ from .access import (
     send_magic_link,
     send_token_revoked_notice,
     toggle_favorite,
+    touch_access_grant,
+    touch_mcp_token,
     update_entry_note,
     verify_turnstile,
 )
@@ -178,6 +186,49 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         email = get_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
         return email is not None and email.casefold() in app.config['ADMIN_EMAILS']
 
+    def record_session_activity(grant_id):
+        """Advance the account's last-active time, at most hourly per session."""
+        now = int(time.time())
+        touched_at = session.get("activity_touched_at")
+        if isinstance(touched_at, int) and now - touched_at < ACTIVITY_TOUCH_INTERVAL:
+            return
+        try:
+            touch_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        except Exception:
+            app.logger.exception("Activity touch failed")
+            return
+        session["activity_touched_at"] = now
+
+    _token_touch_cache: dict[str, int] = {}
+
+    def record_token_activity(user_token):
+        """Advance an MCP token's (and its account's) last-active time hourly."""
+        if not user_token or not app.config['ACCESS_DATABASE_PATH']:
+            return
+        now = int(time.time())
+        cache_key = hashlib.sha256(user_token.encode()).hexdigest()
+        if now - _token_touch_cache.get(cache_key, 0) < ACTIVITY_TOUCH_INTERVAL:
+            return
+        try:
+            touch_mcp_token(
+                app.config['ACCESS_DATABASE_PATH'],
+                app.config['ACCESS_CODE_SECRET'],
+                user_token,
+            )
+        except Exception:
+            app.logger.exception("Token activity touch failed")
+            return
+        if len(_token_touch_cache) > 10000:
+            _token_touch_cache.clear()
+        _token_touch_cache[cache_key] = now
+
+    def record_forwarded_token_activity():
+        """Hosted MCP forwards the caller's token; count it as activity."""
+        forwarded = request.headers.get("X-User-Authorization", "")
+        scheme, separator, value = forwarded.partition(" ")
+        if scheme.lower() == "bearer" and separator:
+            record_token_activity(value)
+
     @app.before_request
     def require_beta_login():
         if not auth_enabled:
@@ -192,6 +243,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             request.headers.get("X-Service-Token", "").encode(),
             app.config['WENKU_SERVICE_TOKEN'].encode(),
         ):
+            record_forwarded_token_activity()
             return None
         # With only a service token (no account store), protect API routes but
         # keep pages public.
@@ -203,6 +255,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             grant_id = session.get("access_grant_id")
             if grant_id is not None and app.config['ACCESS_DATABASE_PATH']:
                 if is_access_grant_active(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                    record_session_activity(grant_id)
                     return None
             session.clear()
         if request.path.startswith("/api/"):
@@ -211,8 +264,11 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     @app.after_request
     def protect_login_tokens(response):
-        sensitive_paths = {"/login", "/account", "/favorites", "/admin", "/account/email-change"}
-        if request.path in sensitive_paths or (
+        sensitive_paths = {
+            "/login", "/account", "/favorites", "/admin",
+            "/account/email-change", "/account/export",
+        }
+        if request.path in sensitive_paths or request.path.startswith("/admin/") or (
             session.get("access_grant_id") is not None
             and request.path.startswith(("/api/favorites", "/api/notes"))
         ):
@@ -226,6 +282,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             return redirect(url_for("views.index"))
         error = None
         submitted = False
+        account_deleted = request.args.get("deleted") == "1"
         next_url = safe_next_url(request.values.get("next"))
         csrf_token = session.get("login_csrf")
         if not csrf_token:
@@ -308,6 +365,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             'login.html',
             error=error,
             submitted=submitted,
+            account_deleted=account_deleted,
             next_url=next_url,
             csrf_token=csrf_token,
             magic_login_enabled=magic_login_enabled,
@@ -419,6 +477,16 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             elif request.form.get("action") == "cancel_email_change":
                 cancel_email_change(app.config['ACCESS_DATABASE_PATH'], grant_id)
                 message = "已取消邮箱更换。"
+            elif request.form.get("action") == "delete_account":
+                confirmation = normalize_email(request.form.get("confirm_email", ""))
+                if confirmation != email.casefold():
+                    error = "请输入您的登录邮箱以确认删除账户。"
+                elif delete_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                    session.clear()
+                    return redirect(url_for("login", deleted="1"))
+                else:
+                    session.clear()
+                    return redirect(url_for("login"))
             else:
                 error = "未知操作。"
 
@@ -445,6 +513,86 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             mcp_tokens=mcp_tokens,
             new_mcp_token=new_mcp_token,
         )
+
+    @app.route('/account/export')
+    def account_export():
+        """Download the account's favorites and notes as a JSON file."""
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return redirect(url_for("views.index"))
+        email = get_access_grant(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        if email is None:
+            session.clear()
+            return redirect(url_for("login"))
+
+        def iso(timestamp):
+            return datetime.fromtimestamp(int(timestamp), timezone.utc).isoformat()
+
+        favorites = []
+        notes = []
+        with NianpuDatabase(app.config['DATABASE_PATH']) as export_db:
+            for fav in list_favorites(
+                app.config['ACCESS_DATABASE_PATH'], grant_id, limit=100000
+            ):
+                favorites.append({
+                    "entry_id": fav["entry_id"],
+                    "created_at": iso(fav["created_at"]),
+                    "entry": _entry_meta(export_db, fav["entry_id"]),
+                })
+            for note in list_entry_notes_all(
+                app.config['ACCESS_DATABASE_PATH'], grant_id, limit=100000
+            ):
+                notes.append({
+                    "id": note["id"],
+                    "entry_id": note["entry_id"],
+                    "quote": note["quote"],
+                    "body": note["body"],
+                    "created_at": iso(note["created_at"]),
+                    "updated_at": iso(note["updated_at"]),
+                    "entry": _entry_meta(export_db, note["entry_id"]),
+                })
+        payload = {
+            "exported_at": iso(time.time()),
+            "email": email,
+            "favorites": favorites,
+            "notes": notes,
+        }
+        filename = f"qian-wenku-export-{datetime.now(timezone.utc):%Y%m%d}.json"
+        return Response(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            mimetype="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def _entry_meta(corpus_db, entry_id):
+        """Permalink and citation fields for one entry, or None if missing."""
+        try:
+            row = corpus_db.conn.execute(
+                """
+                SELECT e.permalink, e.title, e.date_iso, e.date_precision,
+                       e.content_type, e.start_page,
+                       s.title AS source_title
+                FROM entries e
+                JOIN sources s ON e.source_id = s.id
+                WHERE e.id = ?
+                """,
+                (entry_id,),
+            ).fetchone()
+        except Exception:
+            app.logger.exception("Entry lookup failed")
+            return None
+        if row is None:
+            return None
+        date_display = format_date_chinese(row["date_iso"], row["date_precision"])
+        return {
+            "permalink": row["permalink"],
+            "url": f"{app.config['PUBLIC_BASE_URL'].rstrip('/')}/e/{row['permalink']}",
+            "title": row["title"] or date_display,
+            "date_display": date_display,
+            "content_type": row["content_type"] or "nianpu",
+            "source_title": row["source_title"],
+            "start_page": row["start_page"],
+        }
 
     @app.route('/favorites')
     def favorites_page():
@@ -570,6 +718,53 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         session.pop("email_change_csrf", None)
         return redirect(url_for("account"))
 
+    def format_day(timestamp):
+        if timestamp is None:
+            return None
+        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime("%Y-%m-%d")
+
+    def format_minute(timestamp):
+        if timestamp is None:
+            return None
+        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+
+    def handle_admin_action(csrf_token):
+        """Apply one operator POST action; returns (error, message)."""
+        supplied_csrf = request.form.get("csrf_token", "")
+        if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
+            return "请刷新页面后重试。", None
+        action = request.form.get("action")
+        try:
+            grant_id = int(request.form.get("grant_id", ""))
+        except ValueError:
+            grant_id = 0
+        if action == "revoke_account":
+            revoked_email = get_access_grant(
+                app.config['ACCESS_DATABASE_PATH'], grant_id
+            )
+            if not revoke_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                return "账户不存在或已撤销。", None
+            if revoked_email and app.config['RESEND_API_KEY']:
+                try:
+                    send_token_revoked_notice(
+                        app.config['RESEND_API_KEY'],
+                        app.config['ACCESS_FROM_EMAIL'],
+                        revoked_email,
+                        "全部 MCP 令牌",
+                        "qx_legacy",
+                        revoked_by_operator=True,
+                    )
+                except EmailDeliveryError:
+                    app.logger.exception("Account-revoked notice failed")
+            return None, "账户已撤销。"
+        if action == "reinstate_account":
+            if reinstate_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
+                return None, "账户已恢复。"
+            return "账户不存在或未撤销。", None
+        return "未知操作。", None
+
     @app.route('/admin', methods=['GET', 'POST'])
     def admin():
         # Operator console: an account whose email is listed in ADMIN_EMAILS.
@@ -581,65 +776,24 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         error = None
         message = None
         if request.method == 'POST':
-            supplied_csrf = request.form.get("csrf_token", "")
-            if not hmac.compare_digest(supplied_csrf.encode(), csrf_token.encode()):
-                error = "请刷新页面后重试。"
-            else:
-                action = request.form.get("action")
-                try:
-                    grant_id = int(request.form.get("grant_id", ""))
-                except ValueError:
-                    grant_id = 0
-                if action == "revoke_account":
-                    revoked_email = get_access_grant(
-                        app.config['ACCESS_DATABASE_PATH'], grant_id
-                    )
-                    if revoke_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
-                        message = "账户已撤销。"
-                        if revoked_email and app.config['RESEND_API_KEY']:
-                            try:
-                                send_token_revoked_notice(
-                                    app.config['RESEND_API_KEY'],
-                                    app.config['ACCESS_FROM_EMAIL'],
-                                    revoked_email,
-                                    "全部 MCP 令牌",
-                                    "qx_legacy",
-                                    revoked_by_operator=True,
-                                )
-                            except EmailDeliveryError:
-                                app.logger.exception("Account-revoked notice failed")
-                    else:
-                        error = "账户不存在或已撤销。"
-                elif action == "reinstate_account":
-                    if reinstate_account(app.config['ACCESS_DATABASE_PATH'], grant_id):
-                        message = "账户已恢复。"
-                    else:
-                        error = "账户不存在或未撤销。"
-                else:
-                    error = "未知操作。"
+            error, message = handle_admin_action(csrf_token)
 
+        query = request.values.get("q", "").strip()[:200]
         try:
             page = max(1, int(request.values.get("page", "1")))
         except ValueError:
             page = 1
         per_page = 50
-        total = count_all_accounts(app.config['ACCESS_DATABASE_PATH'])
+        total = count_all_accounts(app.config['ACCESS_DATABASE_PATH'], query=query)
         accounts = list_all_accounts(
             app.config['ACCESS_DATABASE_PATH'],
             limit=per_page,
             offset=(page - 1) * per_page,
+            query=query,
         )
-        now_ts = int(time.time())
         for account in accounts:
-            account["created_date"] = datetime.fromtimestamp(
-                int(account["created_at"]), timezone.utc
-            ).strftime("%Y-%m-%d")
-            if account["last_used_at"] is not None:
-                account["last_used_date"] = datetime.fromtimestamp(
-                    int(account["last_used_at"]), timezone.utc
-                ).strftime("%Y-%m-%d")
-            else:
-                account["last_used_date"] = None
+            account["created_date"] = format_day(account["created_at"])
+            account["last_used_date"] = format_day(account["last_used_at"])
 
         return render_template(
             'admin.html',
@@ -647,10 +801,56 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             error=error,
             message=message,
             accounts=accounts,
+            query=query,
             page=page,
             total=total,
             per_page=per_page,
-            now_ts=now_ts,
+        )
+
+    @app.route('/admin/accounts/<int:grant_id>', methods=['GET', 'POST'])
+    def admin_account(grant_id):
+        """Operator view of one account: tokens, usage counts, recent logins."""
+        if not (app.config['ACCESS_DATABASE_PATH'] and session_is_admin()):
+            return redirect(url_for("views.index"))
+
+        csrf_token = account_csrf_token()
+
+        error = None
+        message = None
+        if request.method == 'POST':
+            error, message = handle_admin_action(csrf_token)
+
+        account = get_account_detail(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        if account is None:
+            return render_template('404.html'), 404
+        now_ts = int(time.time())
+        account["created_date"] = format_day(account["created_at"])
+        account["last_used_date"] = format_day(account["last_used_at"])
+        account["revoked_date"] = format_day(account["revoked_at"])
+        for token in account["tokens"]:
+            token["created_date"] = format_day(token["created_at"])
+            token["last_used_date"] = format_day(token["last_used_at"])
+        for link in account["magic_links"]:
+            link["created_display"] = format_minute(link["created_at"])
+            if link["used_at"] is not None:
+                link["status"] = "已使用"
+            elif link["expires_at"] <= now_ts:
+                link["status"] = "已过期"
+            else:
+                link["status"] = "未使用"
+            link["purpose_display"] = {
+                "login": "登录",
+                "access_request": "登录",
+                "email_change": "更换邮箱",
+            }.get(link["purpose"], link["purpose"])
+
+        return render_template(
+            'admin_account.html',
+            csrf_token=csrf_token,
+            error=error,
+            message=message,
+            account=account,
+            query=request.args.get("q", ""),
         )
 
     @app.post('/logout')
@@ -761,6 +961,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         )
         if grant_id is None:
             return jsonify({"error": "Authentication required"}), 401
+        record_token_activity(user_token)
 
         favorites = _load_favorites(app, grant_id)
         return jsonify({"favorites": favorites, "total": len(favorites)})
@@ -846,6 +1047,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 app.config['ACCESS_CODE_SECRET'],
                 value,
             )
+            record_token_activity(value)
         else:
             grant_id = _current_grant_or_401()
         if grant_id is None:
