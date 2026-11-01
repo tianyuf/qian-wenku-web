@@ -1353,6 +1353,7 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
     background: var(--accent-soft);
     color: var(--text);
     font-size: 0.85rem;
+    white-space: pre-line;
 }
 
 .entry-note-body {
@@ -1649,4 +1650,174 @@ a.year-cell:hover { outline: 1px solid var(--accent); }
 .admin-links-table th {
     color: var(--muted);
     font-weight: 500;
+}
+
+/* Annotations: tags, popover, toast, flashes, notes page */
+.note-tag-chips,
+.notes-tag-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.note-tag-chip {
+    display: inline-block;
+    padding: 0.1rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.note-tag-chip:hover,
+.note-tag-chip:focus-visible {
+    color: var(--text);
+    border-color: var(--accent);
+    text-decoration: none;
+}
+
+.note-tag-chip.is-selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.note-tag {
+    display: inline-block;
+    margin-bottom: 0.3rem;
+    padding: 0 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.6;
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.note-tag-todo { background: #fdf1dc; color: #8a5a00; }
+.note-tag-cite { background: var(--accent-soft); color: var(--accent); }
+.note-tag-question { background: #ece9f8; color: #4f3d8c; }
+
+.entry-full-content mark.entry-highlight[data-tag="todo"] { background: #fdf1dc; border-bottom-color: #c98a1a; }
+.entry-full-content mark.entry-highlight[data-tag="question"] { background: #ece9f8; border-bottom-color: #6f5bb8; }
+
+.entry-note-quote[role="button"] {
+    cursor: pointer;
+}
+
+.entry-note-quote[role="button"]:hover {
+    border-left-color: #1c5951;
+}
+
+.entry-note-quote.is-orphan {
+    border-left-style: dashed;
+    opacity: 0.8;
+}
+
+.entry-note-orphan {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.entry-note-edit {
+    padding: 0 0.25rem;
+}
+
+.entry-note-meta > span:first-child {
+    flex: 1;
+}
+
+.entry-note.is-flashing,
+.entry-full-content mark.entry-highlight.is-flashing {
+    animation: note-flash 1.6s ease-out;
+}
+
+@keyframes note-flash {
+    0% { box-shadow: 0 0 0 3px rgba(44, 110, 100, 0.55); }
+    100% { box-shadow: 0 0 0 3px rgba(44, 110, 100, 0); }
+}
+
+.note-popover {
+    position: fixed;
+    z-index: 1050;
+    width: min(22rem, calc(100vw - 16px));
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: 0 0.5rem 1.5rem rgba(36, 41, 35, 0.18);
+}
+
+.note-popover .entry-note-quote {
+    max-height: 4.5em;
+    overflow: hidden;
+    font-size: 0.8rem;
+}
+
+.note-popover-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.note-popover.is-invalid textarea,
+.note-popover.is-invalid #note-popover-save {
+    display: none;
+}
+
+.note-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 1.25rem;
+    z-index: 1060;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    background: #242923;
+    color: #fff;
+    font-size: 0.85rem;
+    box-shadow: 0 0.5rem 1.5rem rgba(36, 41, 35, 0.3);
+}
+
+.note-toast .btn-link {
+    padding: 0;
+    color: #a8e0d6;
+    font-size: 0.85rem;
+}
+
+.entry-notes-cta {
+    margin: 1rem 0 0;
+}
+
+.entry-note-editor textarea {
+    margin-top: 0.25rem;
+}
+
+.notes-filter {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1rem 0 0.6rem;
+}
+
+.notes-filter .form-control {
+    flex: 1;
+    min-width: 0;
+}
+
+.account-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }

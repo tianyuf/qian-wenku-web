@@ -106,8 +106,11 @@
 
         <section class="account-section" aria-labelledby="data-title">
             <h2 id="data-title">我的数据</h2>
-            <p class="text-muted small">下载您的全部收藏与批注（JSON 格式，含条目链接与出处）。</p>
-            <a class="btn btn-outline-secondary" href="{{ url_for('account_export') }}">导出收藏与批注</a>
+            <p class="text-muted small">下载您的全部收藏与批注。Markdown 版按条目分组，引文已附出处，可直接粘贴到文稿；JSON 版含完整字段，便于程序处理。</p>
+            <div class="account-export-actions">
+                <a class="btn btn-outline-secondary" href="{{ url_for('account_export', format='md') }}">导出为 Markdown</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('account_export') }}">导出为 JSON</a>
+            </div>
         </section>
 
         <section class="account-section account-danger" aria-labelledby="delete-title">

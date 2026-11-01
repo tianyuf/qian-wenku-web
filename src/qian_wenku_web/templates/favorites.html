@@ -22,8 +22,9 @@
                     <div class="favorite-notes">
                         {% for note in fav.notes %}
                         <div class="favorite-note">
+                            {% if note.tag_label %}<span class="note-tag note-tag-{{ note.tag }}">{{ note.tag_label }}</span>{% endif %}
                             {% if note.quote %}<blockquote class="entry-note-quote">「{{ note.quote }}」</blockquote>{% endif %}
-                            <div class="entry-note-body">{{ note.body }}</div>
+                            {% if note.body %}<div class="entry-note-body">{{ note.body }}</div>{% endif %}
                         </div>
                         {% endfor %}
                     </div>
@@ -56,8 +57,9 @@
                         <a href="{{ url_for('views.entry_permalink', permalink=item.permalink) }}">{{ item.title }}</a>
                         <span>{{ item.source_title }} · {{ item.date_display }} · 第 {{ item.start_page }} 页 · 批注于 {{ item.note.created_display }}</span>
                         <div class="favorite-notes">
+                            {% if item.note.tag_label %}<span class="note-tag note-tag-{{ item.note.tag }}">{{ item.note.tag_label }}</span>{% endif %}
                             {% if item.note.quote %}<blockquote class="entry-note-quote">「{{ item.note.quote }}」</blockquote>{% endif %}
-                            <div class="entry-note-body">{{ item.note.body }}</div>
+                            {% if item.note.body %}<div class="entry-note-body">{{ item.note.body }}</div>{% endif %}
                         </div>
                     </div>
                     <form method="post" action="{{ url_for('favorite_toggle') }}" class="favorite-add-form">

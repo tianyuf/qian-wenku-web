@@ -790,8 +790,12 @@ def test_entry_notes_flow(artifact_dir, tmp_path, monkeypatch):
     assert updated.get_json() == {"updated": True}
     assert client.get("/api/notes?entry_id=1").get_json()["notes"][0]["body"] == "更新后的批注"
 
-    # Validation: empty body rejected.
-    assert client.put(f"/api/notes/{note_id}", data={"body": " ", "csrf_token": "fixture-csrf"}).status_code == 400
+    # A note with a highlight may drop its comment (highlight-only), but a
+    # note with neither comment nor highlight is rejected.
+    assert client.put(f"/api/notes/{note_id}", data={"body": " ", "csrf_token": "fixture-csrf"}).status_code == 200
+    assert client.put(
+        f"/api/notes/{note_id}", data={"body": " ", "quote": "", "csrf_token": "fixture-csrf"}
+    ).status_code == 400
 
     # Delete the note.
     deleted = client.delete(f"/api/notes/{note_id}", headers={"X-CSRF-Token": "fixture-csrf"})
@@ -1293,3 +1297,105 @@ def test_send_signup_notice_payload(monkeypatch):
     assert "账户总数：7" in body["text"]
     assert "https://wenku.example.org/admin?q=new%2Buser%40example.com" in body["text"]
     assert captured["idempotency"] == "qian-wenku-signup-42"
+
+
+def test_notes_tags_anchors_and_filters(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(artifact_dir, tmp_path, monkeypatch)
+    client = app.test_client()
+    _login_as(client, 1)
+    csrf = {"csrf_token": "fixture-csrf"}
+
+    # Highlight-only note with a position anchor and a tag.
+    created = client.post("/api/notes", data=dict(csrf, **{
+        "entry_id": "1", "body": "", "quote": "合成", "tag": "todo",
+        "anchor_start": "12", "anchor_end": "14", "prefix": "前文", "suffix": "后文",
+    }))
+    assert created.status_code == 201, created.get_json()
+    highlight_id = created.get_json()["note_id"]
+
+    # Plain comment, no highlight, no tag.
+    comment = client.post("/api/notes", data=dict(csrf, entry_id="1", body="总体评论"))
+    assert comment.status_code == 201
+    comment_id = comment.get_json()["note_id"]
+
+    # Validation: unknown tag, bad anchor, nothing at all.
+    assert client.post("/api/notes", data=dict(csrf, entry_id="1", body="x", tag="nope")).status_code == 400
+    assert client.post("/api/notes", data=dict(
+        csrf, entry_id="1", quote="合成", anchor_start="5", anchor_end="2"
+    )).status_code == 400
+    assert client.post("/api/notes", data=dict(csrf, entry_id="1", body="  ", quote="")).status_code == 400
+
+    listed = client.get("/api/notes?entry_id=1").get_json()["notes"]
+    # Anchored highlight sorts before the unanchored comment.
+    assert [n["id"] for n in listed] == [highlight_id, comment_id]
+    first = listed[0]
+    assert first["tag"] == "todo" and first["tag_label"] == "待查"
+    assert (first["anchor_start"], first["anchor_end"]) == (12, 14)
+    assert (first["prefix"], first["suffix"]) == ("前文", "后文")
+    assert first["body"] == ""
+    assert listed[1]["anchor_start"] is None
+
+    # Editing the tag keeps the highlight and anchor; clearing the quote drops the anchor.
+    assert client.put(f"/api/notes/{highlight_id}", data=dict(csrf, body="补充", tag="cite")).get_json() == {"updated": True}
+    edited = client.get("/api/notes?entry_id=1").get_json()["notes"][0]
+    assert edited["tag"] == "cite" and edited["quote"] == "合成" and edited["anchor_start"] == 12
+    assert client.put(f"/api/notes/{highlight_id}", data=dict(csrf, body="补充", quote="")).status_code == 200
+    cleared = [n for n in client.get("/api/notes?entry_id=1").get_json()["notes"] if n["id"] == highlight_id][0]
+    assert cleared["quote"] == "" and cleared["anchor_start"] is None
+
+    # Cross-entry listing supports text search and tag filter.
+    assert [n["id"] for n in client.get("/api/notes?q=评论").get_json()["notes"]] == [comment_id]
+    assert [n["id"] for n in client.get("/api/notes?tag=cite").get_json()["notes"]] == [highlight_id]
+    assert client.get("/api/notes?q=%25").get_json()["total"] == 0
+    assert client.get("/api/notes?tag=bogus").status_code == 400
+
+    # The entry page ships the data the script needs plus the script itself.
+    page = client.get("/e/nianpu-19111211-a").get_data(as_text=True)
+    assert 'id="notes-data"' in page and '"tags"' in page and "annotations.js" in page
+    assert 'id="entry-content" data-entry-id="1"' in page
+    assert "note-tag-cite" in page
+
+    # Anonymous readers see the call to action instead of the panel.
+    anon_page = app.test_client().get("/e/nianpu-19111211-a")
+    assert anon_page.status_code == 302  # auth required; the CTA is for the public-pages mode
+
+
+def test_notes_page_and_markdown_export(artifact_dir, tmp_path, monkeypatch):
+    app, access_db = _account_app(artifact_dir, tmp_path, monkeypatch)
+    client = app.test_client()
+    _login_as(client, 1)
+    csrf = {"csrf_token": "fixture-csrf"}
+    client.post("/api/notes", data=dict(csrf, entry_id="1", body="需要核对日期", quote="合成", tag="todo"))
+    client.post("/api/notes", data=dict(csrf, entry_id="1", body="可引用", tag="cite"))
+    client.post("/api/favorites", data=dict(csrf, entry_id="1"))
+
+    assert app.test_client().get("/notes").status_code == 302
+
+    page = client.get("/notes")
+    assert page.status_code == 200
+    text = page.get_data(as_text=True)
+    assert "需要核对日期" in text and "可引用" in text
+    assert "/e/nianpu-19111211-a#note-" in text
+    assert "note-tag-todo" in text
+
+    filtered = client.get("/notes?tag=todo").get_data(as_text=True)
+    assert "需要核对日期" in filtered and "可引用" not in filtered
+    searched = client.get("/notes?q=引用").get_data(as_text=True)
+    assert "可引用" in searched and "需要核对日期" not in searched
+    assert "没有匹配的批注" in client.get("/notes?q=zzz").get_data(as_text=True)
+
+    export = client.get("/account/export?format=md")
+    assert export.status_code == 200
+    assert export.mimetype == "text/markdown"
+    assert 'filename="qian-wenku-notes-' in export.headers["Content-Disposition"]
+    md = export.get_data(as_text=True)
+    assert md.startswith("# 钱学森文库")
+    assert "> 合成" in md
+    assert "> — 钱学森，《" in md
+    assert "**[待查]** 需要核对日期" in md
+    assert "**[引用]** 可引用" in md
+    assert " ★" in md  # favorited entry marker
+    assert "/e/nianpu-19111211-a" in md
+
+    account_text = client.get("/account").get_data(as_text=True)
+    assert "format=md" in account_text

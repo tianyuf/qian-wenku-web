@@ -26,12 +26,14 @@ from .database import NianpuDatabase
 from .formatting import format_date_chinese
 from .access import (
     ACTIVITY_TOUCH_INTERVAL,
+    NOTE_TAGS,
     AccessRequestLimitError,
     EmailDeliveryError,
     add_entry_note,
     access_database_is_healthy,
     account_exists,
     count_all_accounts,
+    count_entry_notes,
     consume_magic_link,
     consume_email_change,
     cancel_email_change,
@@ -159,6 +161,18 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
 
     app.register_blueprint(views_bp)
 
+    def format_day(timestamp):
+        if timestamp is None:
+            return None
+        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime("%Y-%m-%d")
+
+    def format_minute(timestamp):
+        if timestamp is None:
+            return None
+        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+
     def safe_next_url(value):
         parsed = urlsplit(value or "")
         if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
@@ -271,7 +285,7 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     @app.after_request
     def protect_login_tokens(response):
         sensitive_paths = {
-            "/login", "/account", "/favorites", "/admin",
+            "/login", "/account", "/favorites", "/notes", "/admin",
             "/account/email-change", "/account/export",
         }
         if request.path in sensitive_paths or request.path.startswith("/admin/") or (
@@ -576,6 +590,12 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                     "entry_id": note["entry_id"],
                     "quote": note["quote"],
                     "body": note["body"],
+                    "tag": note["tag"],
+                    "tag_label": note["tag_label"],
+                    "anchor_start": note["anchor_start"],
+                    "anchor_end": note["anchor_end"],
+                    "prefix": note["prefix"],
+                    "suffix": note["suffix"],
                     "created_at": iso(note["created_at"]),
                     "updated_at": iso(note["updated_at"]),
                     "entry": _entry_meta(export_db, note["entry_id"]),
@@ -586,12 +606,76 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "favorites": favorites,
             "notes": notes,
         }
-        filename = f"qian-wenku-export-{datetime.now(timezone.utc):%Y%m%d}.json"
+        stamp = f"{datetime.now(timezone.utc):%Y%m%d}"
+        if request.args.get("format") == "md":
+            return Response(
+                _export_markdown(payload),
+                mimetype="text/markdown; charset=utf-8",
+                headers={
+                    "Content-Disposition":
+                        f'attachment; filename="qian-wenku-notes-{stamp}.md"'
+                },
+            )
         return Response(
             json.dumps(payload, ensure_ascii=False, indent=2),
             mimetype="application/json",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="qian-wenku-export-{stamp}.json"'
+            },
         )
+
+    def _export_markdown(payload):
+        """Notes grouped by entry, each quote ready to paste as a citation."""
+        lines = ["# 钱学森文库 · 我的批注与收藏", "",
+                 f"导出时间：{payload['exported_at']}", ""]
+        by_entry: dict[int, dict] = {}
+        for note in payload["notes"]:
+            by_entry.setdefault(note["entry_id"], {"entry": note["entry"], "notes": []})
+            by_entry[note["entry_id"]]["notes"].append(note)
+        favorite_ids = {fav["entry_id"] for fav in payload["favorites"]}
+        for fav in payload["favorites"]:
+            by_entry.setdefault(fav["entry_id"], {"entry": fav["entry"], "notes": []})
+
+        def heading(entry_id, entry):
+            if not entry:
+                return f"## 条目 {entry_id}（已不存在）"
+            star = " ★" if entry_id in favorite_ids else ""
+            return f"## {entry['title']}{star}"
+
+        def source_line(entry):
+            if not entry:
+                return ""
+            return (
+                f"{entry['source_title']} · {entry['date_display']} · "
+                f"第 {entry['start_page']} 页 · <{entry['url']}>"
+            )
+
+        for entry_id, group in by_entry.items():
+            entry = group["entry"]
+            lines.append(heading(entry_id, entry))
+            lines.append("")
+            if entry:
+                lines.append(source_line(entry))
+                lines.append("")
+            for note in group["notes"]:
+                label = NOTE_TAGS.get(note["tag"], "")
+                if note["quote"]:
+                    for quote_line in note["quote"].splitlines() or [""]:
+                        lines.append(f"> {quote_line}")
+                    if entry:
+                        lines.append(f"> — 钱学森，《{entry['source_title']}》，"
+                                     f"{entry['date_display']}，第 {entry['start_page']} 页")
+                    lines.append("")
+                if label:
+                    lines.append(f"**[{label}]** " + (note["body"] or ""))
+                elif note["body"]:
+                    lines.append(note["body"])
+                if label or note["body"]:
+                    lines.append("")
+                lines.append(f"<!-- {note['created_at']} -->")
+                lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
 
     def _entry_meta(corpus_db, entry_id):
         """Permalink and citation fields for one entry, or None if missing."""
@@ -622,6 +706,50 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             "source_title": row["source_title"],
             "start_page": row["start_page"],
         }
+
+    @app.route('/notes')
+    def notes_page():
+        """All of the account's notes across entries, searchable and filterable."""
+        grant_id = session.get("access_grant_id")
+        if grant_id is None or not app.config['ACCESS_DATABASE_PATH']:
+            return redirect(url_for("views.index"))
+        query = request.args.get("q", "").strip()[:200]
+        tag = request.args.get("tag", "").strip()
+        if tag not in NOTE_TAGS:
+            tag = ""
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        per_page = 50
+        # Fetch one extra row to know whether a next page exists.
+        notes = list_entry_notes_all(
+            app.config['ACCESS_DATABASE_PATH'],
+            grant_id,
+            limit=per_page + 1,
+            offset=(page - 1) * per_page,
+            query=query,
+            tag=tag,
+        )
+        has_next = len(notes) > per_page
+        notes = notes[:per_page]
+        with NianpuDatabase(app.config['DATABASE_PATH']) as notes_db:
+            meta_cache = {}
+            for note in notes:
+                if note["entry_id"] not in meta_cache:
+                    meta_cache[note["entry_id"]] = _entry_meta(notes_db, note["entry_id"])
+                note["entry"] = meta_cache[note["entry_id"]]
+                note["created_display"] = format_minute(note["created_at"])
+        total_notes = count_entry_notes(app.config['ACCESS_DATABASE_PATH'], grant_id)
+        return render_template(
+            'notes.html',
+            notes=notes,
+            query=query,
+            tag=tag,
+            page=page,
+            has_next=has_next,
+            total_notes=total_notes,
+        )
 
     @app.route('/favorites')
     def favorites_page():
@@ -746,18 +874,6 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             return render_template('email_change.html', csrf_token=csrf_token, error=True), 400
         session.pop("email_change_csrf", None)
         return redirect(url_for("account"))
-
-    def format_day(timestamp):
-        if timestamp is None:
-            return None
-        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime("%Y-%m-%d")
-
-    def format_minute(timestamp):
-        if timestamp is None:
-            return None
-        return datetime.fromtimestamp(int(timestamp), timezone.utc).strftime(
-            "%Y-%m-%d %H:%M"
-        )
 
     def handle_admin_action(csrf_token):
         """Apply one operator POST action; returns (error, message)."""
@@ -902,9 +1018,17 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             style_version = int(os.path.getmtime(os.path.join(static_dir, "style.css")))
         except OSError:
             style_version = 0
+        try:
+            script_version = int(
+                os.path.getmtime(os.path.join(static_dir, "annotations.js"))
+            )
+        except OSError:
+            script_version = 0
         return {
             "r2_cdn_url": app.config["R2_CDN_URL"],
             "style_version": style_version,
+            "script_version": script_version,
+            "note_tags": NOTE_TAGS,
             "beta_auth_enabled": auth_enabled,
             "individual_account": session.get("access_grant_id") is not None,
             "operator_session": session_is_admin(),
@@ -1007,6 +1131,17 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
         )
         return jsonify({"notes": notes, "total": len(notes)})
 
+    def _note_anchor_from_form():
+        """Read the optional text-position anchor fields of a note form."""
+        if not request.form.get("anchor_start", "").strip():
+            return None
+        return {
+            "start": request.form.get("anchor_start", ""),
+            "end": request.form.get("anchor_end", ""),
+            "prefix": request.form.get("prefix", ""),
+            "suffix": request.form.get("suffix", ""),
+        }
+
     @app.route('/api/notes', methods=['POST'])
     def note_create():
         grant_id = _current_grant_or_401()
@@ -1025,6 +1160,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 entry_id,
                 request.form.get("body", ""),
                 request.form.get("quote", ""),
+                tag=request.form.get("tag", ""),
+                anchor=_note_anchor_from_form(),
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -1052,6 +1189,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 note_id,
                 request.form.get("body", ""),
                 request.form.get("quote"),
+                tag=request.form.get("tag"),
+                anchor=_note_anchor_from_form(),
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -1087,8 +1226,14 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 return _json_notes(grant_id, int(entry_id))
             except ValueError:
                 return jsonify({"error": "Invalid entry"}), 400
+        tag = request.args.get("tag", "").strip()
+        if tag and tag not in NOTE_TAGS:
+            return jsonify({"error": "Unknown tag"}), 400
         notes = list_entry_notes_all(
-            app.config['ACCESS_DATABASE_PATH'], grant_id
+            app.config['ACCESS_DATABASE_PATH'],
+            grant_id,
+            query=request.args.get("q", ""),
+            tag=tag,
         )
         return jsonify({"notes": notes, "total": len(notes)})
 

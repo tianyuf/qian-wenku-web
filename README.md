@@ -101,7 +101,8 @@ All configuration is via environment variables (not loaded from `.env` files by 
 |---|---|
 | `/`, `/search/results` | Search UI and HTMX results |
 | `/login`, `/account` | Email magic-link login (open registration) and account management (MCP tokens, email change, self-service export and deletion) |
-| `/account/export` | Download the signed-in account's favorites and notes as JSON |
+| `/notes` | All of the signed-in account's annotations across entries, with text search and tag filter |
+| `/account/export`, `/account/export?format=md` | Download the signed-in account's favorites and notes as JSON, or as Markdown grouped by entry with citation-ready quotes |
 | `/admin`, `/admin/accounts/<id>` | Operator console (emails in `ADMIN_EMAILS`): search accounts by email, view one account's tokens, usage counts and recent login links, revoke or reinstate |
 | `/browse`, `/browse/year/<year>`, `/date/` | Corpus browsing |
 | `/e/<permalink>` | Canonical entry page |
@@ -122,6 +123,10 @@ Checked-in examples for the production deployment at `https://wenku.qianxuesen.o
 Install the package and virtualenv under `/opt/qian-wenku-web`, place the prepared artifact at `/opt/qian-wenku-web/artifacts`, and install only the web service and nginx site. There are no backup or ingestion units in this repository.
 
 ### MCP server (for AI agents)
+
+### Annotations
+
+Signed-in readers can highlight passages and attach notes on entry pages (`static/annotations.js`). Selecting text opens a popover; a note may be a highlight only, a comment only, or both, and may carry one tag (待查 / 引用 / 疑问). Highlights are stored as the quoted text plus character offsets into the entry's paragraphs and a few characters of surrounding context, so they survive small transcript corrections; a quote that can no longer be found is shown as orphaned rather than dropped. `/api/notes` accepts `tag`, `anchor_start`, `anchor_end`, `prefix`, `suffix` and supports `?q=` and `?tag=` filters.
 
 A hosted MCP endpoint is exposed at `https://wenku.qianxuesen.org/mcp/rpc` for AI clients (Claude Desktop, etc.). Sign in to the website and create a named MCP token from the account page; each token can be revoked independently.
 

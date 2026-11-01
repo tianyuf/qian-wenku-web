@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block meta_description %}您的全部批注{% endblock %}
+{% block title %}批注 · 钱学森文库{% endblock %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block skip_link %}<a href="#main" class="visually-hidden-focusable" style="position:absolute;top:0;left:0;z-index:9999;padding:0.5rem 1rem;background:var(--accent);color:#fff;text-decoration:none;">跳到主要内容</a>{% endblock %}
+
+{% block content %}
+<main class="favorites-view" id="main">
+    <section class="favorites-panel" aria-labelledby="notes-title">
+        <span class="section-kicker">文库访问</span>
+        <h1 id="notes-title">批注{% if total_notes %} <span class="favorites-count">{{ total_notes }}</span>{% endif %}</h1>
+
+        <form method="get" class="notes-filter" role="search">
+            <label class="visually-hidden" for="notes-search">搜索批注</label>
+            <input class="form-control" id="notes-search" name="q" type="search" value="{{ query }}" placeholder="搜索批注或引文" maxlength="200">
+            {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
+            <button type="submit" class="btn btn-outline-secondary">搜索</button>
+        </form>
+        <div class="notes-tag-filter" aria-label="按标签筛选">
+            <a class="note-tag-chip{% if not tag %} is-selected{% endif %}" href="{{ url_for('notes_page', q=query or None) }}">全部</a>
+            {% for key, label in note_tags.items() %}
+            <a class="note-tag-chip{% if tag == key %} is-selected{% endif %}" href="{{ url_for('notes_page', q=query or None, tag=key) }}">{{ label }}</a>
+            {% endfor %}
+        </div>
+
+        {% if notes %}
+        <div class="favorites-list notes-list">
+            {% for note in notes %}
+            <div class="favorite-row">
+                <div class="favorite-main">
+                    {% if note.entry %}
+                    <a href="{{ url_for('views.entry_permalink', permalink=note.entry.permalink) }}#note-{{ note.id }}">{{ note.entry.title }}</a>
+                    <span>{{ note.entry.source_title }} · {{ note.entry.date_display }} · 第 {{ note.entry.start_page }} 页 · 批注于 {{ note.created_display }}</span>
+                    {% else %}
+                    <span class="text-muted">条目已不存在 · 批注于 {{ note.created_display }}</span>
+                    {% endif %}
+                    <div class="favorite-notes">
+                        <div class="favorite-note">
+                            {% if note.tag_label %}<span class="note-tag note-tag-{{ note.tag }}">{{ note.tag_label }}</span>{% endif %}
+                            {% if note.quote %}<blockquote class="entry-note-quote">「{{ note.quote }}」</blockquote>{% endif %}
+                            {% if note.body %}<div class="entry-note-body">{{ note.body }}</div>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if page > 1 or has_next %}
+        <nav class="admin-pagination" aria-label="分页">
+            {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('notes_page', q=query or None, tag=tag or None, page=page-1) }}">上一页</a>{% endif %}
+            <span>第 {{ page }} 页</span>
+            {% if has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('notes_page', q=query or None, tag=tag or None, page=page+1) }}">下一页</a>{% endif %}
+        </nav>
+        {% endif %}
+        {% elif query or tag %}
+        <div class="favorites-empty">
+            <p>没有匹配的批注。</p>
+            <a class="btn btn-outline-secondary" href="{{ url_for('notes_page') }}">清除筛选</a>
+        </div>
+        {% else %}
+        <div class="favorites-empty">
+            <p>暂无批注。</p>
+            <p class="text-muted small">在条目页面选中正文文字即可高亮或批注，批注会保存在您的账户下。</p>
+            <a class="btn btn-primary" href="{{ url_for('views.index') }}">去搜索</a>
+        </div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}

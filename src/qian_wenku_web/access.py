@@ -602,7 +602,7 @@ def is_favorite(path: str, grant_id: int, entry_id: int) -> bool:
 
 
 def initialize_notes(path: str) -> None:
-    """Create the entry-notes table inside the access-grant store."""
+    """Create (and migrate) the entry-notes table inside the access-grant store."""
     with sqlite3.connect(path, timeout=10) as connection:
         connection.execute(
             """
@@ -612,11 +612,27 @@ def initialize_notes(path: str) -> None:
                 entry_id INTEGER NOT NULL,
                 quote TEXT NOT NULL DEFAULT '',
                 body TEXT NOT NULL,
+                tag TEXT NOT NULL DEFAULT '',
+                anchor_start INTEGER,
+                anchor_end INTEGER,
+                prefix TEXT NOT NULL DEFAULT '',
+                suffix TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
             """
         )
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(entry_notes)")}
+        migrations = {
+            "tag": "ALTER TABLE entry_notes ADD COLUMN tag TEXT NOT NULL DEFAULT ''",
+            "anchor_start": "ALTER TABLE entry_notes ADD COLUMN anchor_start INTEGER",
+            "anchor_end": "ALTER TABLE entry_notes ADD COLUMN anchor_end INTEGER",
+            "prefix": "ALTER TABLE entry_notes ADD COLUMN prefix TEXT NOT NULL DEFAULT ''",
+            "suffix": "ALTER TABLE entry_notes ADD COLUMN suffix TEXT NOT NULL DEFAULT ''",
+        }
+        for column, statement in migrations.items():
+            if column not in columns:
+                connection.execute(statement)
         connection.execute(
             "CREATE INDEX IF NOT EXISTS entry_notes_entry_idx "
             "ON entry_notes(grant_id, entry_id, created_at)"
@@ -625,6 +641,76 @@ def initialize_notes(path: str) -> None:
 
 MAX_NOTE_BODY = 5000
 MAX_NOTE_QUOTE = 500
+MAX_NOTE_CONTEXT = 64
+
+# Fixed, small tag vocabulary: key stored in the database, label shown in UI.
+NOTE_TAGS = {
+    "todo": "待查",
+    "cite": "引用",
+    "question": "疑问",
+}
+
+
+def _clean_tag(tag: str | None) -> str:
+    tag = (tag or "").strip()
+    if tag and tag not in NOTE_TAGS:
+        raise ValueError("unknown note tag")
+    return tag
+
+
+def _clean_anchor(anchor: dict[str, object] | None) -> dict[str, object]:
+    """Validate a text-position anchor: offsets plus a little context."""
+    if not anchor:
+        return {"anchor_start": None, "anchor_end": None, "prefix": "", "suffix": ""}
+    try:
+        start = int(anchor.get("start", ""))  # type: ignore[arg-type]
+        end = int(anchor.get("end", ""))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError("note anchor offsets must be integers") from None
+    if start < 0 or end < start:
+        raise ValueError("note anchor offsets are out of range")
+    prefix = str(anchor.get("prefix") or "")[-MAX_NOTE_CONTEXT:]
+    suffix = str(anchor.get("suffix") or "")[:MAX_NOTE_CONTEXT]
+    return {"anchor_start": start, "anchor_end": end, "prefix": prefix, "suffix": suffix}
+
+
+def _clean_note_text(body: str, quote: str) -> tuple[str, str]:
+    body = (body or "").strip()
+    quote = (quote or "").strip()
+    if len(body) > MAX_NOTE_BODY:
+        raise ValueError("note body must be at most 5000 characters")
+    if len(quote) > MAX_NOTE_QUOTE:
+        raise ValueError("note quote must be at most 500 characters")
+    if not body and not quote:
+        raise ValueError("a note needs a comment, a highlighted passage, or both")
+    return body, quote
+
+
+def _note_row(row: sqlite3.Row | tuple) -> dict[str, object]:
+    (
+        note_id, entry_id, quote, body, tag, anchor_start, anchor_end,
+        prefix, suffix, created_at, updated_at,
+    ) = row
+    return {
+        "id": int(note_id),
+        "entry_id": int(entry_id),
+        "quote": str(quote or ""),
+        "body": str(body or ""),
+        "tag": str(tag or ""),
+        "tag_label": NOTE_TAGS.get(str(tag or ""), ""),
+        "anchor_start": int(anchor_start) if anchor_start is not None else None,
+        "anchor_end": int(anchor_end) if anchor_end is not None else None,
+        "prefix": str(prefix or ""),
+        "suffix": str(suffix or ""),
+        "created_at": int(created_at),
+        "updated_at": int(updated_at),
+    }
+
+
+_NOTE_COLUMNS = (
+    "id, entry_id, quote, body, tag, anchor_start, anchor_end, "
+    "prefix, suffix, created_at, updated_at"
+)
 
 
 def add_entry_note(
@@ -633,14 +719,14 @@ def add_entry_note(
     entry_id: int,
     body: str,
     quote: str = "",
+    *,
+    tag: str = "",
+    anchor: dict[str, object] | None = None,
 ) -> int | None:
-    """Attach one comment (optionally quoting a highlight) to an entry."""
-    body = body.strip()
-    quote = quote.strip()
-    if not body or len(body) > MAX_NOTE_BODY:
-        raise ValueError("note body must be 1-5000 characters")
-    if len(quote) > MAX_NOTE_QUOTE:
-        raise ValueError("note quote must be at most 500 characters")
+    """Attach a comment, a highlight (quote + anchor), or both to an entry."""
+    body, quote = _clean_note_text(body, quote)
+    tag = _clean_tag(tag)
+    position = _clean_anchor(anchor if quote else None)
     now = int(time.time())
     with sqlite3.connect(path, timeout=5) as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -653,34 +739,61 @@ def add_entry_note(
         cursor = connection.execute(
             """
             INSERT INTO entry_notes
-                (grant_id, entry_id, quote, body, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (grant_id, entry_id, quote, body, tag, anchor_start, anchor_end,
+                 prefix, suffix, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (grant_id, entry_id, quote, body, now, now),
+            (
+                grant_id, entry_id, quote, body, tag,
+                position["anchor_start"], position["anchor_end"],
+                position["prefix"], position["suffix"], now, now,
+            ),
         )
         return int(cursor.lastrowid)
 
 
 def update_entry_note(
-    path: str, grant_id: int, note_id: int, body: str, quote: str | None = None
+    path: str,
+    grant_id: int,
+    note_id: int,
+    body: str,
+    quote: str | None = None,
+    *,
+    tag: str | None = None,
+    anchor: dict[str, object] | None = None,
 ) -> bool:
-    """Edit one note's text (and optionally its highlight quote)."""
-    body = body.strip()
-    if not body or len(body) > MAX_NOTE_BODY:
-        raise ValueError("note body must be 1-5000 characters")
+    """Edit one note's text, tag, and optionally its highlight and anchor.
+
+    `quote=None` keeps the existing highlight; an empty string removes it
+    (and its anchor). `tag=None` keeps the existing tag.
+    """
     with sqlite3.connect(path, timeout=5) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            "SELECT quote FROM entry_notes WHERE id = ? AND grant_id = ?",
+            (note_id, grant_id),
+        ).fetchone()
+        if existing is None:
+            return False
+        new_quote = str(existing[0] or "") if quote is None else quote
+        body, new_quote = _clean_note_text(body, new_quote)
         sets = ["body = ?", "updated_at = ?"]
         params: list[object] = [body, int(time.time())]
         if quote is not None:
-            quote = quote.strip()
-            if len(quote) > MAX_NOTE_QUOTE:
-                raise ValueError("note quote must be at most 500 characters")
             sets.append("quote = ?")
-            params.append(quote)
+            params.append(new_quote)
+            position = _clean_anchor(anchor if new_quote else None)
+            sets.extend(["anchor_start = ?", "anchor_end = ?", "prefix = ?", "suffix = ?"])
+            params.extend([
+                position["anchor_start"], position["anchor_end"],
+                position["prefix"], position["suffix"],
+            ])
+        if tag is not None:
+            sets.append("tag = ?")
+            params.append(_clean_tag(tag))
         params.extend([note_id, grant_id])
         cursor = connection.execute(
-            f"UPDATE entry_notes SET {', '.join(sets)} "
-            "WHERE id = ? AND grant_id = ?",
+            f"UPDATE entry_notes SET {', '.join(sets)} WHERE id = ? AND grant_id = ?",
             params,
         )
     return cursor.rowcount == 1
@@ -697,55 +810,61 @@ def delete_entry_note(path: str, grant_id: int, note_id: int) -> bool:
 
 
 def list_entry_notes(path: str, grant_id: int, entry_id: int) -> list[dict[str, object]]:
-    """List one account's notes on one entry, oldest first."""
+    """List one account's notes on one entry.
+
+    Anchored highlights come first in text order; everything else follows
+    oldest first, so the panel reads top to bottom like the entry itself.
+    """
     with _read_only_connection(path) as connection:
         rows = connection.execute(
-            """
-            SELECT id, quote, body, created_at, updated_at
+            f"""
+            SELECT {_NOTE_COLUMNS}
             FROM entry_notes
             WHERE grant_id = ? AND entry_id = ?
-            ORDER BY created_at ASC, id ASC
+            ORDER BY anchor_start IS NULL, anchor_start ASC, created_at ASC, id ASC
             """,
             (grant_id, entry_id),
         ).fetchall()
-    return [
-        {
-            "id": int(row[0]),
-            "quote": str(row[1] or ""),
-            "body": str(row[2]),
-            "created_at": int(row[3]),
-            "updated_at": int(row[4]),
-        }
-        for row in rows
-    ]
+    return [_note_row(row) for row in rows]
 
 
 def list_entry_notes_all(
-    path: str, grant_id: int, limit: int = 200, offset: int = 0
+    path: str,
+    grant_id: int,
+    limit: int = 200,
+    offset: int = 0,
+    *,
+    query: str = "",
+    tag: str = "",
 ) -> list[dict[str, object]]:
-    """List all of an account's notes across entries, newest first."""
+    """List an account's notes across entries, newest first, with optional filters.
+
+    `query` matches literally (case-insensitive) in the body or the quote;
+    `tag` restricts to one tag key.
+    """
+    clauses = ["grant_id = ?"]
+    params: list[object] = [grant_id]
+    query = (query or "").strip()[:200]
+    if query:
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        clauses.append("(body LIKE ? ESCAPE '\\' OR quote LIKE ? ESCAPE '\\')")
+        params.extend([pattern, pattern])
+    if tag:
+        clauses.append("tag = ?")
+        params.append(tag)
     with _read_only_connection(path) as connection:
         rows = connection.execute(
-            """
-            SELECT id, entry_id, quote, body, created_at, updated_at
+            f"""
+            SELECT {_NOTE_COLUMNS}
             FROM entry_notes
-            WHERE grant_id = ?
+            WHERE {' AND '.join(clauses)}
             ORDER BY updated_at DESC, id DESC
             LIMIT ? OFFSET ?
             """,
-            (grant_id, limit, offset),
+            (*params, limit, offset),
         ).fetchall()
-    return [
-        {
-            "id": int(row[0]),
-            "entry_id": int(row[1]),
-            "quote": str(row[2] or ""),
-            "body": str(row[3]),
-            "created_at": int(row[4]),
-            "updated_at": int(row[5]),
-        }
-        for row in rows
-    ]
+    return [_note_row(row) for row in rows]
 
 
 def count_entry_notes(path: str, grant_id: int) -> int:
