@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -379,6 +380,20 @@ def touch_mcp_token(
             (now, int(row[1]), now - min_interval),
         )
     return True
+
+
+def account_exists(path: str, email: str) -> bool:
+    """Return whether an active account already exists for this email."""
+    with _read_only_connection(path) as connection:
+        row = connection.execute(
+            """
+            SELECT 1 FROM access_grants
+            WHERE email = ? COLLATE NOCASE AND revoked_at IS NULL
+            LIMIT 1
+            """,
+            (email,),
+        ).fetchone()
+    return row is not None
 
 
 def is_access_grant_active(path: str, grant_id: int) -> bool:
@@ -1207,6 +1222,41 @@ def send_token_revoked_notice(
             "<p>该令牌已立即失效。如非本人操作，请尽快登录并检查您的账户。</p>"
         ),
         idempotency_key=f"qian-wenku-token-revoked-{token_hint}",
+    )
+
+
+def send_signup_notice(
+    api_key: str,
+    sender: str,
+    recipient: str,
+    new_email: str,
+    link_id: int,
+    base_url: str,
+    total_accounts: int,
+) -> None:
+    """Tell the operator that a new account was just created."""
+    admin_url = f"{base_url.rstrip('/')}/admin?q={quote(new_email)}"
+    created_at = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    _send_email(
+        api_key,
+        sender,
+        recipient,
+        subject=f"新用户注册：{new_email} · qianxuesen.org",
+        text=(
+            f"有新用户注册了钱学森文库。\n\n"
+            f"邮箱：{new_email}\n"
+            f"时间：{created_at}\n"
+            f"账户总数：{total_accounts}\n\n"
+            f"在管理控制台查看：{admin_url}"
+        ),
+        html=(
+            "<p>有新用户注册了钱学森文库。</p>"
+            f"<p>邮箱：<strong>{html.escape(new_email)}</strong><br>"
+            f"时间：{created_at}<br>"
+            f"账户总数：{total_accounts}</p>"
+            f'<p><a href="{html.escape(admin_url)}">在管理控制台查看</a></p>'
+        ),
+        idempotency_key=f"qian-wenku-signup-{link_id}",
     )
 
 

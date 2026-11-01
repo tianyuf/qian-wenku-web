@@ -91,6 +91,7 @@ All configuration is via environment variables (not loaded from `.env` files by 
 | `RESEND_API_KEY` / `ACCESS_FROM_EMAIL` | Resend credentials for automatic code delivery; keep the API key out of source control |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile credentials required for the public request form |
 | `PUBLIC_BASE_URL` | Public archive origin used in login emails |
+| `SIGNUP_NOTIFY_EMAIL` | Operator address emailed whenever a new account is created (set empty to disable) |
 | `WENKU_MCP_TOKEN` | Optional operator fallback token for the hosted MCP endpoint |
 | `WENKU_SERVICE_TOKEN` | Service credential sent as X-Service-Token by the MCP process to call the protected web API |
 

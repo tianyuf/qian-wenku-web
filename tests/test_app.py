@@ -1,3 +1,4 @@
+import json
 import hashlib
 import re
 import sqlite3
@@ -1223,3 +1224,72 @@ def test_admin_search_and_account_detail(artifact_dir, tmp_path, monkeypatch):
     reader = app.test_client()
     _login_as(reader, 1)
     assert reader.get(f"/admin/accounts/{alice_grant}").status_code == 302
+
+
+def test_signup_notifies_operator_once(artifact_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("SIGNUP_NOTIFY_EMAIL", "owner@example.com")
+    sent_notices = []
+    monkeypatch.setattr("qian_wenku_web.app.send_magic_link", lambda *args: None)
+    monkeypatch.setattr("qian_wenku_web.app.verify_turnstile", lambda *args: True)
+    monkeypatch.setattr(
+        "qian_wenku_web.app.send_signup_notice",
+        lambda api_key, sender, recipient, new_email, link_id, base_url, total: (
+            sent_notices.append((recipient, new_email, total))
+        ),
+    )
+    app, access_db = _account_app(artifact_dir, tmp_path, monkeypatch)
+    client = app.test_client()
+    client.get("/login")
+    with client.session_transaction() as session:
+        csrf_token = session["login_csrf"]
+
+    # A brand-new email creates an account and notifies the operator.
+    response = client.post(
+        "/login", data={"csrf_token": csrf_token, "email": "New@Example.com"}
+    )
+    assert response.status_code == 200
+    assert sent_notices == [("owner@example.com", "New@example.com", 2)]
+
+    # The seeded reader logging in again is not a sign-up.
+    client.post("/login", data={"csrf_token": csrf_token, "email": "reader@example.com"})
+    assert len(sent_notices) == 1
+
+    # A failed notice never breaks the login flow.
+    def failing_notice(*args):
+        from qian_wenku_web.access import EmailDeliveryError
+        raise EmailDeliveryError("down")
+    monkeypatch.setattr("qian_wenku_web.app.send_signup_notice", failing_notice)
+    response = client.post(
+        "/login", data={"csrf_token": csrf_token, "email": "another@example.com"}
+    )
+    assert response.status_code == 200
+    assert "登录链接已发送" in response.get_data(as_text=True)
+
+
+def test_send_signup_notice_payload(monkeypatch):
+    from qian_wenku_web import access as access_mod
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode())
+        captured["idempotency"] = request.get_header("Idempotency-key")
+        return FakeResponse()
+
+    monkeypatch.setattr(access_mod, "urlopen", fake_urlopen)
+    access_mod.send_signup_notice(
+        "key", "Archive <no-reply@example.com>", "owner@example.com",
+        "new+user@example.com", 42, "https://wenku.example.org/", 7,
+    )
+    body = captured["body"]
+    assert body["to"] == ["owner@example.com"]
+    assert "new+user@example.com" in body["subject"]
+    assert "账户总数：7" in body["text"]
+    assert "https://wenku.example.org/admin?q=new%2Buser%40example.com" in body["text"]
+    assert captured["idempotency"] == "qian-wenku-signup-42"

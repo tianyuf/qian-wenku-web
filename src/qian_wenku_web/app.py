@@ -30,6 +30,7 @@ from .access import (
     EmailDeliveryError,
     add_entry_note,
     access_database_is_healthy,
+    account_exists,
     count_all_accounts,
     consume_magic_link,
     consume_email_change,
@@ -59,6 +60,7 @@ from .access import (
     revoke_mcp_token,
     send_email_change_link,
     send_magic_link,
+    send_signup_notice,
     send_token_revoked_notice,
     toggle_favorite,
     touch_access_grant,
@@ -112,6 +114,10 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
     app.config['PUBLIC_BASE_URL'] = os.getenv(
         "PUBLIC_BASE_URL", "https://wenku.qianxuesen.org"
     )
+    # Operator address notified whenever a new account is created.
+    app.config['SIGNUP_NOTIFY_EMAIL'] = os.getenv(
+        "SIGNUP_NOTIFY_EMAIL", "tianyu@tianyufang.net"
+    ).strip()
     app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "")
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
@@ -276,6 +282,24 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
+    def notify_signup(email, link_id):
+        """Email the operator about a new account; never blocks the login flow."""
+        recipient = app.config['SIGNUP_NOTIFY_EMAIL']
+        if not recipient or not app.config['RESEND_API_KEY']:
+            return
+        try:
+            send_signup_notice(
+                app.config['RESEND_API_KEY'],
+                app.config['ACCESS_FROM_EMAIL'],
+                recipient,
+                email,
+                link_id,
+                app.config['PUBLIC_BASE_URL'],
+                count_all_accounts(app.config['ACCESS_DATABASE_PATH']),
+            )
+        except EmailDeliveryError:
+            app.logger.exception("Sign-up notice failed")
+
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if not auth_enabled:
@@ -331,6 +355,9 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                 if not email:
                     error = "请输入有效的邮箱地址。"
                 else:
+                    is_new_account = not account_exists(
+                        app.config['ACCESS_DATABASE_PATH'], email
+                    )
                     try:
                         link = issue_magic_link(
                             app.config['ACCESS_DATABASE_PATH'],
@@ -360,6 +387,8 @@ def create_app(db_path=None, mapping_path=None, manifest_path=None):
                                     app.config['ACCESS_DATABASE_PATH'], link_id
                                 )
                                 app.logger.exception("Magic-link delivery failed")
+                            if is_new_account:
+                                notify_signup(email, link_id)
                         submitted = True
         return render_template(
             'login.html',
